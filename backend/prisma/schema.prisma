@@ -1,0 +1,193 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Appointment {
+  id               Int            @id @default(autoincrement())
+  patientId        Int? // Making this optional for existing records
+  patient          Patient?       @relation(fields: [patientId], references: [id])
+  patientName      String
+  patientPhone     String
+  patientVisibleId String?
+  date             DateTime
+  time             String
+  type             String         @default("Consultation")
+  duration         String
+  status           String         @default("Confirmed")
+  notes            String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  emergencyCase    EmergencyCase?
+  emergencyCaseId  Int?
+
+  @@index([patientId])
+}
+
+model Patient {
+  id                   Int             @id @default(autoincrement())
+  visibleId            String          @unique
+  name                 String          @db.VarChar(100)
+  age                  Int
+  gender               String          @db.VarChar(20)
+  phone                String          @db.VarChar(20)
+  email                String?         @db.VarChar(100)
+  condition            String?         @db.VarChar(200)
+  status               String          @default("Active") @db.VarChar(50)
+  allergies            String[]
+  lastVisit            DateTime?
+  abhaId               String?         @unique @db.VarChar(50)
+  abhaVerified         Boolean         @default(false)
+  emergencyContact     String?         @db.VarChar(100)
+  emergencyPhone       String?         @db.VarChar(20)
+  address              String?         @db.Text
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  appointments         Appointment[]
+  emergencyCases       EmergencyCase[]
+  createdFromEmergency Boolean         @default(false)
+  medicalReports       MedicalReport[] // New relation
+}
+
+model AppointmentSettings {
+  id                    Int      @id @default(autoincrement())
+  workingHoursStart     String // e.g. "08:00"
+  workingHoursEnd       String // e.g. "18:00"
+  breakStart            String // e.g. "12:00"
+  breakEnd              String // e.g. "13:00"
+  durations             Json // Array of { value: string, label: string, isActive: boolean }
+  appointmentTypes      String[] // e.g. ["Consultation", "Follow-up", ...]
+  maxAppointmentsPerDay Int      @default(50)
+  allowOverlapping      Boolean  @default(false)
+  bufferTime            Int      @default(15) // in minutes
+  advanceBookingDays    Int      @default(30)
+  autoGenerateSlots     Boolean  @default(true)
+  defaultDuration       String   @default("30")
+  timeSlots             Json // Array of { id: string, time: string, isActive: boolean }
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model HospitalSettings {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String
+  phone     String
+  email     String
+  website   String?
+  license   String?
+  director  String?
+  capacity  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailConfiguration {
+  id           Int      @id @default(autoincrement())
+  smtpPort     String
+  smtpUsername String
+  smtpPassword String
+  senderEmail  String
+  smtpHost     String
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
+
+model InventoryItem {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  category      String
+  currentStock  Int
+  minStock      Int
+  maxStock      Int
+  unit          String
+  pricePerUnit  Float
+  supplier      String
+  expiryDate    DateTime? // Nullable for items like equipment
+  batchNumber   String?
+  lastRestocked DateTime?
+  reason        String? // Reason for last stock update
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  batches InventoryBatch[]
+}
+
+model InventoryCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Supplier {
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  website       String?
+  isActive      Boolean  @default(true)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model EmergencyCase {
+  id             Int          @id @default(autoincrement())
+  patientId      Int
+  patient        Patient      @relation(fields: [patientId], references: [id])
+  chiefComplaint String
+  arrivalTime    DateTime
+  triagePriority String
+  assignedTo     String
+  status         String
+  vitals         Json
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId  Int?         @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  transferStatus String       @default("Not Transferred")
+  transferTo     String?
+  transferReason String?
+  transferNotes  String?
+  transferTime   DateTime?
+
+  @@index([patientId])
+  @@index([appointmentId])
+}
+
+model InventoryBatch {
+  id              Int           @id @default(autoincrement())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId Int
+  batchNumber     String
+  quantity        Int
+  expiryDate      DateTime?
+  restockedAt     DateTime      @default(now())
+  supplier        String?
+  reason          String?
+}
+
+model MedicalReport {
+  id          Int      @id @default(autoincrement())
+  filePath    String   // Path to uploaded file
+  uploadedAt  DateTime @default(now())
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  patientId   Int
+  description String?  // Optional: description or label for the report
+}
