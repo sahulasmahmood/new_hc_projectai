@@ -14,8 +14,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^6.9.0",
     "@google/generative-ai": "^0.21.0",
+    "@prisma/client": "^6.9.0",
+    "@upstash/redis": "^1.35.3",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

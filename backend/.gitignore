@@ -5,3 +5,8 @@ node_modules
 /generated/prisma
 
 /generated/prisma
+
+
+# Documentation files
+*.md
+README.md

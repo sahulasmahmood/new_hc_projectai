@@ -1,4 +1,5 @@
 const { PrismaClient } = require('../../generated/prisma');
+const { getPatientIdPrefix } = require('../../utils/patientIdGenerator');
 const prisma = new PrismaClient();      
 
 // GET all patients with optional search
@@ -118,8 +119,15 @@ const createPatient = async (req, res) => {
       }
     }
 
-    // Generate visibleId (APL-00001 ... APL-99999, then APL-A-00001 ...)
-    let prefix = "APL";
+    // Generate visibleId (PREFIX-00001 ... PREFIX-99999, then PREFIX-A-00001 ...)
+    let prefix;
+    try {
+      prefix = await getPatientIdPrefix();
+    } catch (error) {
+      return res.status(400).json({
+        error: `Unable to create patient: ${error.message}`,
+      });
+    }
     let letter = null;
     let number = 1;
     // Find the highest existing visibleId with this prefix

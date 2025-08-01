@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 const { PrismaClient } = require("../generated/prisma");
+// Removed complex memory system - now using simple Redis sessions
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -58,11 +59,16 @@ Examples:
 "I want to book appointment" → {"intent": "book_appointment", "extractedDate": null, ...}
 "Tomorrow morning" → {"intent": "provide_date", "extractedDate": "${tomorrowStr}", "timePreference": "morning", ...}
 "2 PM today" → {"intent": "provide_time", "extractedDate": "${todayStr}", "extractedTime": "2:00 PM", ...}
+"4:45 PM" → {"intent": "provide_time", "extractedTime": "4:45 PM", ...}
+"5:00 PM" → {"intent": "provide_time", "extractedTime": "5:00 PM", ...}
+"2:30 PM" → {"intent": "provide_time", "extractedTime": "2:30 PM", ...}
 "My name is John, phone 9876543210" → {"intent": "provide_patient_info", "patientName": "John", "patientPhone": "9876543210", ...}
 "john@email.com and I'm 25 years old" → {"intent": "provide_patient_info", "patientEmail": "john@email.com", "patientAge": 25, ...}
 "I am 54 years old" → {"intent": "provide_patient_info", "patientAge": 54, ...}
 "age 30" → {"intent": "provide_patient_info", "patientAge": 30, ...}
-"54" → {"intent": "provide_patient_info", "patientAge": 54, ...}`,
+"54" → {"intent": "provide_patient_info", "patientAge": 54, ...}
+
+IMPORTANT: If the message is ONLY a time (like "4:45 PM", "5:00 PM", etc.), always set intent to "provide_time" and extractedTime to that exact time.`,
         },
         {
           role: "user",
@@ -568,40 +574,216 @@ const handleDateSelection = async (parsed, context) => {
 
 // Handle slot/time selection
 const handleSlotSelection = async (parsed, context) => {
-  if (parsed.extractedTime) {
-    // User specified exact time
+  const userMessage = parsed.originalMessage.trim();
+  console.log(`🕐 Handling slot selection - User message: "${userMessage}"`);
+  console.log(`🕐 Parsed extractedTime: "${parsed.extractedTime}"`);
+  console.log(`🕐 Available slots:`, context.availableSlots.map(s => s.time));
+  
+  // First, try to match the exact message against available slot times
+  let matchingSlot = context.availableSlots.find(
+    (slot) => slot.time === userMessage
+  );
+  
+  // If no exact match, try to find a slot that contains the user's input
+  if (!matchingSlot) {
+    matchingSlot = context.availableSlots.find((slot) => {
+      // Check if user message contains the time (e.g., "4:45 PM" matches "4:45 PM")
+      return userMessage.includes(slot.time) || slot.time.includes(userMessage);
+    });
+  }
+  
+  // Handle malformed date+time format like "Friday, August 104:45 PM"
+  if (!matchingSlot) {
+    // Extract time from malformed strings like "Friday, August 104:45 PM"
+    const malformedTimeMatch = userMessage.match(/\d{1,2}(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (malformedTimeMatch) {
+      // This handles cases like "104:45 PM" -> "4:45 PM"
+      const hour = malformedTimeMatch[1];
+      const minute = malformedTimeMatch[2];
+      const period = malformedTimeMatch[3];
+      const correctedTime = `${hour}:${minute} ${period}`;
+      
+      console.log(`🔧 Correcting malformed time: "${userMessage}" -> "${correctedTime}"`);
+      
+      matchingSlot = context.availableSlots.find(
+        (slot) => slot.time === correctedTime
+      );
+    }
+  }
+  
+  // Also try extracting time from the end of the message
+  if (!matchingSlot) {
+    const timeAtEndMatch = userMessage.match(/(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (timeAtEndMatch) {
+      const extractedTime = timeAtEndMatch[0];
+      console.log(`🔧 Extracted time from end: "${extractedTime}"`);
+      
+      matchingSlot = context.availableSlots.find(
+        (slot) => slot.time === extractedTime
+      );
+    }
+  }
+  
+  // Try to match common time patterns in the user message
+  if (!matchingSlot) {
+    // Extract time patterns like "4:45 PM", "4:45PM", "4.45 PM", etc.
+    // Also handle malformed patterns like "104:45 PM" from concatenated strings
+    const timePatterns = [
+      /(\d{1,2}):(\d{2})\s*(AM|PM)/i,                    // Standard: "4:45 PM"
+      /(\d{1,2})\.(\d{2})\s*(AM|PM)/i,                   // Dot format: "4.45 PM"
+      /(\d{1,2}):(\d{2})(AM|PM)/i,                       // No space: "4:45PM"
+      /(\d{1,2})(\d{2})\s*(AM|PM)/i,                     // No colon: "445 PM"
+      /\d*(\d{1,2}):(\d{2})\s*(AM|PM)/i,                 // Malformed: "104:45 PM" -> "4:45 PM"
+      /.*?(\d{1,2}):(\d{2})\s*(AM|PM).*?/i               // Anywhere in string
+    ];
+    
+    for (const pattern of timePatterns) {
+      const match = userMessage.match(pattern);
+      if (match) {
+        let hour = match[1];
+        const minute = match[2] || '00';
+        const period = match[3].toUpperCase();
+        
+        // Handle malformed hour like "104" -> "4" (from "Friday, August 104:45 PM")
+        if (hour && hour.length > 2) {
+          // Extract the actual hour from malformed strings
+          const hourMatch = hour.match(/(\d{1,2})$/);
+          if (hourMatch) {
+            hour = hourMatch[1];
+          }
+        }
+        
+        const formattedTime = `${hour}:${minute} ${period}`;
+        
+        console.log(`🔍 Trying to match formatted time: "${formattedTime}"`);
+        
+        matchingSlot = context.availableSlots.find(
+          (slot) => slot.time === formattedTime
+        );
+        
+        if (matchingSlot) {
+          console.log(`✅ Found match with formatted time: ${formattedTime}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // Additional fallback: try to find any slot that contains numbers from the user message
+  if (!matchingSlot) {
+    const numbers = userMessage.match(/\d+/g);
+    if (numbers && numbers.length >= 2) {
+      // Take the last two numbers as potential hour and minute
+      const hour = numbers[numbers.length - 2];
+      const minute = numbers[numbers.length - 1];
+      
+      // Try both AM and PM versions
+      const possibleTimes = [
+        `${hour}:${minute} AM`,
+        `${hour}:${minute} PM`
+      ];
+      
+      for (const possibleTime of possibleTimes) {
+        matchingSlot = context.availableSlots.find(
+          (slot) => slot.time === possibleTime
+        );
+        if (matchingSlot) {
+          console.log(`✅ Found match with possible time: ${possibleTime}`);
+          break;
+        }
+      }
+    } else if (numbers && numbers.length >= 1) {
+      // Single number - try as hour with :00 and :15, :30, :45
+      const hour = numbers[numbers.length - 1];
+      const possibleTimes = [
+        `${hour}:00 AM`, `${hour}:00 PM`,
+        `${hour}:15 AM`, `${hour}:15 PM`,
+        `${hour}:30 AM`, `${hour}:30 PM`,
+        `${hour}:45 AM`, `${hour}:45 PM`
+      ];
+      
+      for (const possibleTime of possibleTimes) {
+        matchingSlot = context.availableSlots.find(
+          (slot) => slot.time === possibleTime
+        );
+        if (matchingSlot) {
+          console.log(`✅ Found match with single number time: ${possibleTime}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // If still no match, try the AI-parsed extracted time
+  if (!matchingSlot && parsed.extractedTime) {
     const requestedTime = parsed.extractedTime;
-    const matchingSlot = context.availableSlots.find(
+    matchingSlot = context.availableSlots.find(
       (slot) => slot.time === requestedTime
     );
+  }
+  
+  // If we found a matching slot, proceed with booking
+  if (matchingSlot) {
+    console.log(`✅ Found matching slot: ${matchingSlot.time} on ${matchingSlot.displayDate}`);
+    
+    context.state = CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE;
+    context.bookingData = {
+      ...context.bookingData,
+      selectedSlot: matchingSlot,
+      date: matchingSlot.date,
+      time: matchingSlot.time,
+    };
 
-    if (matchingSlot) {
-      context.state = CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE;
-      context.bookingData = {
-        ...context.bookingData,
-        selectedSlot: matchingSlot,
-        date: matchingSlot.date,
-        time: matchingSlot.time,
-      };
-
-      return {
-        message: `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate}. ✅\n\nWhat type of appointment would you like to book?`,
-        state: CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE,
-        selectedSlot: matchingSlot,
-        suggestedActions: ["select_appointment_type"],
-        conversationContext: context,
-      };
-    } else {
-      return {
-        message: `I'm sorry, ${requestedTime} is not available. Here are the available times:\n\n${context.availableSlots
-          .slice(0, 5)
-          .map((slot) => `• ${slot.time} on ${slot.displayDate}`)
-          .join("\n")}\n\nWhich of these works for you?`,
-        state: CONVERSATION_STATES.SHOWING_SLOTS,
-        availableSlots: context.availableSlots.slice(0, 5),
-        conversationContext: context,
-      };
+    return {
+      message: `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate}. ✅\n\nWhat type of appointment would you like to book?`,
+      state: CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE,
+      selectedSlot: matchingSlot,
+      suggestedActions: ["select_appointment_type"],
+      conversationContext: context,
+    };
+  }
+  
+  // Final fallback: check if user message is similar to any available slot
+  if (!matchingSlot) {
+    console.log(`🔍 Final fallback: checking similarity with available slots`);
+    
+    for (const slot of context.availableSlots) {
+      const slotTime = slot.time.toLowerCase().replace(/\s+/g, '');
+      const userTime = userMessage.toLowerCase().replace(/\s+/g, '');
+      
+      // Check if the user message contains the core time components
+      const slotParts = slot.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (slotParts) {
+        const slotHour = slotParts[1];
+        const slotMinute = slotParts[2];
+        const slotPeriod = slotParts[3];
+        
+        if (userMessage.includes(slotHour) && 
+            userMessage.includes(slotMinute) && 
+            userMessage.toUpperCase().includes(slotPeriod.toUpperCase())) {
+          matchingSlot = slot;
+          console.log(`✅ Found match via similarity: ${slot.time}`);
+          break;
+        }
+      }
     }
+  }
+  
+  console.log(`❌ No matching slot found for: "${userMessage}"`);
+  console.log(`❌ Parsed extractedTime: "${parsed.extractedTime}"`);
+  console.log(`❌ Available slot times:`, context.availableSlots.map(s => s.time));
+  
+  // If we have extracted time but no matching slot, show error
+  if (parsed.extractedTime) {
+    return {
+      message: `I'm sorry, ${parsed.extractedTime} is not available. Here are the available times:\n\n${context.availableSlots
+        .slice(0, 5)
+        .map((slot) => `• ${slot.time} on ${slot.displayDate}`)
+        .join("\n")}\n\nWhich of these works for you?`,
+      state: CONVERSATION_STATES.SHOWING_SLOTS,
+      availableSlots: context.availableSlots.slice(0, 5),
+      conversationContext: context,
+    };
   }
 
   if (parsed.timePreference) {
@@ -651,9 +833,18 @@ const handleSlotSelection = async (parsed, context) => {
     };
   }
 
+  // If we reach here, no slot was selected and no time preference was given
+  // This is likely the issue - the user clicked a time slot but we didn't recognize it
+  console.log(`⚠️ Reached fallback message - this might be the issue!`);
+  console.log(`⚠️ User message: "${userMessage}"`);
+  console.log(`⚠️ Available slots: ${context.availableSlots.map(s => s.time).join(', ')}`);
+  
   return {
     message:
-      'Please let me know which time you\'d prefer. You can:\n\n⏰ **Say the exact time** (e.g., "2:00 PM")\n🕐 **Choose time period** (e.g., "morning" or "afternoon")\n\nWhich works best for you?',
+      `I didn't catch which time you selected. Please let me know which time you'd prefer:\n\n${context.availableSlots
+        .slice(0, 5)
+        .map((slot) => `• **${slot.time}** on ${slot.displayDate}`)
+        .join("\n")}\n\n⏰ **Click on a time above** or type the exact time (e.g., "4:45 PM")`,
     state: CONVERSATION_STATES.SHOWING_SLOTS,
     availableSlots: context.availableSlots.slice(0, 5),
     conversationContext: context,

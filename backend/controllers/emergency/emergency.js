@@ -1,4 +1,5 @@
 const { PrismaClient } = require('../../generated/prisma');
+const { getPatientIdPrefix } = require("../../utils/patientIdGenerator");
 const prisma = new PrismaClient();
 
 // Get all emergency cases (with patient info)
@@ -241,19 +242,24 @@ const registerEmergencyCase = async (req, res) => {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Generate visibleId (APL-00001 ... APL-99999, then APL-A-00001 ...)
-      let prefix = "APL";
+      // Generate visibleId (PREFIX-00001 ... PREFIX-99999, then PREFIX-A-00001 ...)
+      let prefix;
+      try {
+        prefix = await getPatientIdPrefix();
+      } catch (error) {
+        throw new Error(`Unable to create patient: ${error.message}`);
+      }
       let letter = null;
       let number = 1;
       const lastPatient = await tx.patient.findFirst({
         where: {
           visibleId: {
-            startsWith: prefix
-          }
+            startsWith: prefix,
+          },
         },
         orderBy: {
-          visibleId: 'desc'
-        }
+          visibleId: "desc",
+        },
       });
       if (lastPatient && lastPatient.visibleId) {
         let match = lastPatient.visibleId.match(/^([A-Z]{3})-(\d{5})$/);

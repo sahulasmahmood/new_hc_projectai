@@ -1,15 +1,16 @@
 const {
-  processAppointmentChat,
+  processSimpleChat,
+  getConversationHistory,
   CONVERSATION_STATES,
-} = require("../../utils/appointmentChatService");
+} = require("../../utils/simpleChatService");
 const { PrismaClient } = require("../../generated/prisma");
+const { getPatientIdPrefix } = require("../../utils/patientIdGenerator");
 // TODO: Enable email notifications in future
 // const { inngest } = require('../../inngest/client');
 
 const prisma = new PrismaClient();
 
-// Store conversation in memory (in production, use Redis or database)
-const conversations = new Map();
+
 
 // Perform the actual appointment booking
 const performBooking = async (bookingData, conversationId) => {
@@ -28,7 +29,15 @@ const performBooking = async (bookingData, conversationId) => {
     // Create patient if doesn't exist
     if (!patient) {
       // Generate visibleId using the same logic as regular patient creation
-      let prefix = "APL";
+      let prefix;
+      try {
+        prefix = await getPatientIdPrefix();
+      } catch (error) {
+        return {
+          success: false,
+          error: `Unable to create patient: ${error.message}`,
+        };
+      }
       let letter = null;
       let number = 1;
 
@@ -194,7 +203,7 @@ const performBooking = async (bookingData, conversationId) => {
 // Process appointment chat message
 const handleAppointmentChat = async (req, res) => {
   try {
-    const { message, conversationId = "default", userId = null } = req.body;
+    const { message, conversationId = "default", userId = null, patientPhone = null } = req.body;
 
     // Validate input
     if (
@@ -213,27 +222,14 @@ const handleAppointmentChat = async (req, res) => {
       });
     }
 
-    // Get conversation context
-    let conversationContext = conversations.get(conversationId) || {
-      state: CONVERSATION_STATES.GREETING,
-      bookingData: {},
-      availableSlots: [],
-      messages: [],
-    };
+    // Use conversation ID as session ID to maintain state
+    const sessionId = conversationId;
 
-    // Add user message to history
-    const userMessage = {
-      id: Date.now().toString(),
-      type: "user",
-      content: message.trim(),
-      timestamp: new Date().toISOString(),
-    };
-    conversationContext.messages.push(userMessage);
-
-    // Process the message with conversation context
-    const response = await processAppointmentChat(
+    // Process the message with simplified chat service
+    const response = await processSimpleChat(
       message.trim(),
-      conversationContext,
+      sessionId,
+      patientPhone,
       userId
     );
 
@@ -241,8 +237,8 @@ const handleAppointmentChat = async (req, res) => {
     if (response.readyToBook && response.bookingData) {
       try {
         const bookingResult = await performBooking(
-          response.bookingData,
-          conversationId
+          response.conversationContext?.bookingData || response.bookingData,
+          sessionId
         );
         if (bookingResult.success) {
           response.message = `✅ **Appointment Booked Successfully!**\n\n📅 **Details:**\n• Date: ${bookingResult.appointment.date.toLocaleDateString(
@@ -257,23 +253,24 @@ const handleAppointmentChat = async (req, res) => {
           }\n• Duration: ${
             bookingResult.appointment.duration
           } minutes\n\n📱 You'll receive confirmation messages shortly.\n\nIs there anything else I can help you with?`;
-          response.state = CONVERSATION_STATES.COMPLETED;
+          if (response.conversationContext) {
+            response.conversationContext.state = CONVERSATION_STATES.COMPLETED;
+          }
           response.appointmentBooked = true;
           response.appointmentDetails = bookingResult.appointment;
         } else {
           response.message = `❌ Sorry, there was an issue booking your appointment: ${bookingResult.error}\n\nWould you like to try a different time slot?`;
-          response.state = CONVERSATION_STATES.SHOWING_SLOTS;
+          if (response.conversationContext) {
+            response.conversationContext.state = CONVERSATION_STATES.SHOWING_SLOTS;
+          }
         }
       } catch (bookingError) {
         console.error("Booking error:", bookingError);
         response.message = `❌ Sorry, there was an issue booking your appointment. Please try again or contact our staff directly.`;
-        response.state = CONVERSATION_STATES.GREETING;
+        if (response.conversationContext) {
+          response.conversationContext.state = CONVERSATION_STATES.GREETING;
+        }
       }
-    }
-
-    // Update conversation context
-    if (response.conversationContext) {
-      conversationContext = response.conversationContext;
     }
 
     // Create AI response message
@@ -282,28 +279,23 @@ const handleAppointmentChat = async (req, res) => {
       type: "ai",
       content: response.message,
       timestamp: new Date().toISOString(),
-      state: response.state,
+      state: response.conversationContext?.state || CONVERSATION_STATES.GREETING,
       availableSlots: response.availableSlots || [],
       suggestedActions: response.suggestedActions || [],
       urgency: response.urgency || "low",
-      bookingData: response.bookingData,
+      bookingData: response.conversationContext?.bookingData,
       appointmentBooked: response.appointmentBooked || false,
       appointmentDetails: response.appointmentDetails,
+      sessionId: sessionId
     };
-
-    // Add AI response to history
-    conversationContext.messages.push(aiMessage);
-
-    // Store updated conversation (limit to last 20 messages)
-    conversationContext.messages = conversationContext.messages.slice(-20);
-    conversations.set(conversationId, conversationContext);
 
     // Return response
     res.json({
       success: true,
       response: aiMessage,
       conversationId: conversationId,
-      conversationState: response.state,
+      sessionId: sessionId,
+      conversationState: response.conversationContext?.state || CONVERSATION_STATES.GREETING,
     });
   } catch (error) {
     console.error("Error in appointment chat:", error);
@@ -349,7 +341,14 @@ const bookAppointmentFromChat = async (req, res) => {
       }
 
       // Generate visibleId using the same logic as regular patient creation
-      let prefix = "APL";
+      let prefix;
+      try {
+        prefix = await getPatientIdPrefix();
+      } catch (error) {
+        return res.status(400).json({
+          error: `Unable to create patient: ${error.message}`,
+        });
+      }
       let letter = null;
       let number = 1;
 
@@ -525,10 +524,10 @@ const bookAppointmentFromChat = async (req, res) => {
 };
 
 // Get conversation history
-const getConversationHistory = async (req, res) => {
+const getChatHistory = async (req, res) => {
   try {
     const { conversationId = "default" } = req.params;
-    const history = conversations.get(conversationId) || [];
+    const history = await getConversationHistory(conversationId);
 
     res.json({
       success: true,
@@ -547,7 +546,8 @@ const getConversationHistory = async (req, res) => {
 const clearConversation = async (req, res) => {
   try {
     const { conversationId = "default" } = req.params;
-    conversations.delete(conversationId);
+    const { clearSession } = require("../../utils/simpleChatMemory");
+    await clearSession(conversationId);
 
     res.json({
       success: true,
@@ -564,6 +564,6 @@ const clearConversation = async (req, res) => {
 module.exports = {
   handleAppointmentChat,
   bookAppointmentFromChat,
-  getConversationHistory,
+  getConversationHistory: getChatHistory,
   clearConversation,
 };
