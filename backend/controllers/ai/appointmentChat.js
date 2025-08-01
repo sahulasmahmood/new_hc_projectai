@@ -14,30 +14,110 @@ const conversations = new Map();
 // Perform the actual appointment booking
 const performBooking = async (bookingData, conversationId) => {
   try {
-    const { patientName, patientPhone, selectedSlot, existingPatient } =
-      bookingData;
+    const {
+      patientName,
+      patientPhone,
+      patientEmail,
+      patientAge,
+      selectedSlot,
+      existingPatient,
+    } = bookingData;
 
     let patient = existingPatient;
 
     // Create patient if doesn't exist
     if (!patient) {
-      const patientCount = await prisma.patient.count();
+      // Generate visibleId using the same logic as regular patient creation
+      let prefix = "APL";
+      let letter = null;
+      let number = 1;
+
+      // Find the highest existing visibleId with this prefix
+      const lastPatient = await prisma.patient.findFirst({
+        where: {
+          visibleId: {
+            startsWith: prefix,
+          },
+        },
+        orderBy: {
+          visibleId: "desc",
+        },
+      });
+
+      if (lastPatient && lastPatient.visibleId) {
+        // Match APL-00001 to APL-99999
+        let match = lastPatient.visibleId.match(/^([A-Z]{3})-(\d{5})$/);
+        if (match) {
+          prefix = match[1];
+          number = parseInt(match[2], 10) + 1;
+          if (number > 99999) {
+            number = 1;
+            letter = "A";
+          }
+        } else {
+          // Match APL-X-00001 to APL-Z-99999
+          match = lastPatient.visibleId.match(/^([A-Z]{3})-([A-Z])-(\d{5})$/);
+          if (match) {
+            prefix = match[1];
+            letter = match[2];
+            number = parseInt(match[3], 10) + 1;
+            if (number > 99999) {
+              number = 1;
+              // Increment letter
+              if (letter === "Z") {
+                // If letter exceeds Z, increment the last letter of prefix
+                let prefixArr = prefix.split("");
+                let i = 2;
+                while (i >= 0) {
+                  if (prefixArr[i] !== "Z") {
+                    prefixArr[i] = String.fromCharCode(
+                      prefixArr[i].charCodeAt(0) + 1
+                    );
+                    break;
+                  } else {
+                    prefixArr[i] = "A";
+                    i--;
+                  }
+                }
+                prefix = prefixArr.join("");
+                letter = "A";
+              } else {
+                letter = String.fromCharCode(letter.charCodeAt(0) + 1);
+              }
+            }
+          }
+        }
+      }
+
+      let visibleId = letter
+        ? `${prefix}-${letter}-${String(number).padStart(5, "0")}`
+        : `${prefix}-${String(number).padStart(5, "0")}`;
+
       patient = await prisma.patient.create({
         data: {
+          visibleId,
           name: patientName,
-          age: 25, // Default age for AI bookings (can be updated later)
+          age: patientAge || 25, // Use provided age or default
           gender: "Not Specified",
           phone: patientPhone,
-          email: null,
+          email: patientEmail || null,
           condition: "General Consultation",
           allergies: [],
           emergencyContact: null,
           emergencyPhone: null,
           address: null,
           abhaId: null,
-          visibleId: `P${(patientCount + 1).toString().padStart(4, "0")}`,
           status: "Active",
           createdFromEmergency: false,
+        },
+      });
+    } else if (patientEmail && !patient.email) {
+      // Update existing patient with email if they don't have one
+      patient = await prisma.patient.update({
+        where: { id: patient.id },
+        data: {
+          email: patientEmail,
+          age: patientAge || patient.age, // Update age if provided
         },
       });
     }
@@ -69,6 +149,10 @@ const performBooking = async (bookingData, conversationId) => {
       };
     }
 
+    // Get appointment settings for duration
+    const appointmentSettings = await prisma.appointmentSettings.findFirst();
+    const duration = appointmentSettings?.defaultDuration || "30";
+
     // Create appointment
     const appointment = await prisma.appointment.create({
       data: {
@@ -77,8 +161,8 @@ const performBooking = async (bookingData, conversationId) => {
         patientVisibleId: patient.visibleId,
         date: appointmentDate,
         time: selectedSlot.time,
-        type: "General Consultation",
-        duration: "30",
+        type: bookingData.appointmentType || "General Consultation",
+        duration: duration,
         notes: "Booked via AI Chat Assistant",
         status: "Confirmed",
         patientId: patient.id,
@@ -166,9 +250,13 @@ const handleAppointmentChat = async (req, res) => {
             { weekday: "long", month: "long", day: "numeric", year: "numeric" }
           )}\n• Time: ${bookingResult.appointment.time}\n• Patient: ${
             bookingResult.patient.name
-          }\n• Phone: ${bookingResult.patient.phone}\n• Type: ${
+          }\n• Phone: ${bookingResult.patient.phone}\n• Email: ${
+            bookingResult.patient.email || "Not provided"
+          }\n• Age: ${bookingResult.patient.age} years\n• Type: ${
             bookingResult.appointment.type
-          }\n\n📱 You'll receive confirmation messages shortly.\n\nIs there anything else I can help you with?`;
+          }\n• Duration: ${
+            bookingResult.appointment.duration
+          } minutes\n\n📱 You'll receive confirmation messages shortly.\n\nIs there anything else I can help you with?`;
           response.state = CONVERSATION_STATES.COMPLETED;
           response.appointmentBooked = true;
           response.appointmentDetails = bookingResult.appointment;
@@ -232,10 +320,12 @@ const bookAppointmentFromChat = async (req, res) => {
     const {
       patientPhone,
       patientName,
+      patientEmail,
+      patientAge,
       date,
       time,
       type = "General Consultation",
-      duration = "30",
+      duration,
       conversationId = "default",
     } = req.body;
 
@@ -258,27 +348,97 @@ const bookAppointmentFromChat = async (req, res) => {
         });
       }
 
+      // Generate visibleId using the same logic as regular patient creation
+      let prefix = "APL";
+      let letter = null;
+      let number = 1;
+
+      // Find the highest existing visibleId with this prefix
+      const lastPatient = await prisma.patient.findFirst({
+        where: {
+          visibleId: {
+            startsWith: prefix,
+          },
+        },
+        orderBy: {
+          visibleId: "desc",
+        },
+      });
+
+      if (lastPatient && lastPatient.visibleId) {
+        // Match APL-00001 to APL-99999
+        let match = lastPatient.visibleId.match(/^([A-Z]{3})-(\d{5})$/);
+        if (match) {
+          prefix = match[1];
+          number = parseInt(match[2], 10) + 1;
+          if (number > 99999) {
+            number = 1;
+            letter = "A";
+          }
+        } else {
+          // Match APL-X-00001 to APL-Z-99999
+          match = lastPatient.visibleId.match(/^([A-Z]{3})-([A-Z])-(\d{5})$/);
+          if (match) {
+            prefix = match[1];
+            letter = match[2];
+            number = parseInt(match[3], 10) + 1;
+            if (number > 99999) {
+              number = 1;
+              // Increment letter
+              if (letter === "Z") {
+                // If letter exceeds Z, increment the last letter of prefix
+                let prefixArr = prefix.split("");
+                let i = 2;
+                while (i >= 0) {
+                  if (prefixArr[i] !== "Z") {
+                    prefixArr[i] = String.fromCharCode(
+                      prefixArr[i].charCodeAt(0) + 1
+                    );
+                    break;
+                  } else {
+                    prefixArr[i] = "A";
+                    i--;
+                  }
+                }
+                prefix = prefixArr.join("");
+                letter = "A";
+              } else {
+                letter = String.fromCharCode(letter.charCodeAt(0) + 1);
+              }
+            }
+          }
+        }
+      }
+
+      let visibleId = letter
+        ? `${prefix}-${letter}-${String(number).padStart(5, "0")}`
+        : `${prefix}-${String(number).padStart(5, "0")}`;
+
       // Create new patient
-      const patientCount = await prisma.patient.count();
       patient = await prisma.patient.create({
         data: {
+          visibleId,
           name: patientName,
-          age: 25, // Default age for AI bookings (can be updated later)
+          age: patientAge || 25, // Use provided age or default
           gender: "Not Specified",
           phone: patientPhone,
-          email: null,
+          email: patientEmail || null,
           condition: "General Consultation",
           allergies: [],
           emergencyContact: null,
           emergencyPhone: null,
           address: null,
           abhaId: null,
-          visibleId: `P${(patientCount + 1).toString().padStart(4, "0")}`,
           status: "Active",
           createdFromEmergency: false,
         },
       });
     }
+
+    // Get appointment settings for duration if not provided
+    const appointmentSettings = await prisma.appointmentSettings.findFirst();
+    const appointmentDuration =
+      duration || appointmentSettings?.defaultDuration || "30";
 
     // Parse date
     const [year, month, day] = date.split("-").map(Number);
@@ -315,8 +475,8 @@ const bookAppointmentFromChat = async (req, res) => {
         patientVisibleId: patient.visibleId,
         date: appointmentDate,
         time,
-        type,
-        duration,
+        type: type || "General Consultation",
+        duration: appointmentDuration,
         notes: "Booked via AI Chat Assistant",
         status: "Confirmed",
         patientId: patient.id,
