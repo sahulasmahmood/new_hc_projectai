@@ -7,6 +7,7 @@ const settingsRouter = require('./settings');
 const emergencyRouter = require('./emergency');
 const inventoryRouter = require('./inventory');
 const aiRouter = require('./ai');
+const staffRouter = require('./staff');
 /* const categoriesRouter = require('./categories');
 const suppliersRouter = require('./suppliers'); */
 
@@ -18,6 +19,7 @@ router.use('/settings', settingsRouter);
 router.use('/emergency', emergencyRouter);
 router.use('/inventory', inventoryRouter);
 router.use('/ai', aiRouter);
+router.use('/', staffRouter);
 /* router.use('/settings/categories', categoriesRouter);
 router.use('/settings/suppliers', suppliersRouter); */
 

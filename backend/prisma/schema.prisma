@@ -105,8 +105,8 @@ model EmailConfiguration {
 }
 
 model InventoryItem {
-  id            Int       @id @default(autoincrement())
-  code          String    @unique
+  id            Int              @id @default(autoincrement())
+  code          String           @unique
   name          String
   category      String
   currentStock  Int
@@ -119,9 +119,9 @@ model InventoryItem {
   batchNumber   String?
   lastRestocked DateTime?
   reason        String? // Reason for last stock update
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  batches InventoryBatch[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  batches       InventoryBatch[]
 }
 
 model InventoryCategory {
@@ -185,9 +185,25 @@ model InventoryBatch {
 
 model MedicalReport {
   id          Int      @id @default(autoincrement())
-  filePath    String   // Path to uploaded file
+  filePath    String // Path to uploaded file
   uploadedAt  DateTime @default(now())
   patient     Patient  @relation(fields: [patientId], references: [id])
   patientId   Int
-  description String?  // Optional: description or label for the report
+  description String? // Optional: description or label for the report
+}
+
+model Staff {
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(100)
+  role            String   @db.VarChar(50)
+  department      String   @db.VarChar(50)
+  qualification   String?
+  experience      String?
+  phone           String?  @db.VarChar(20)
+  email           String?  @db.VarChar(100)
+  status          String   @default("On Duty") @db.VarChar(20)
+  shift           String?  @db.VarChar(20)
+  consultationFee String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

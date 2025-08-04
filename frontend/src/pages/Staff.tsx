@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,80 +9,78 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Users, Plus, Search, Filter, Stethoscope, User, UserCheck, Clock, Phone, Mail, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+interface StaffMember {
+  id: number;
+  name: string;
+  role: string;
+  department: string;
+  qualification: string;
+  experience?: string;
+  phone: string;
+  email: string;
+  status: string;
+  shift?: string;
+  consultationFee?: string;
+}
+
 const Staff = () => {
   const { toast } = useToast();
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [newStaff, setNewStaff] = useState({
     name: "",
     role: "",
     department: "",
     qualification: "",
+    experience: "",
     phone: "",
-    email: ""
+    email: "",
+    status: "On Duty",
+    shift: "Morning",
+    consultationFee: ""
   });
 
-  const staff = [
-    {
-      id: 1,
-      name: "Dr. Rajesh Kumar",
-      role: "Cardiologist",
-      department: "Cardiology",
-      qualification: "MBBS, MD Cardiology",
-      experience: "15 years",
-      phone: "+91 98765 43210",
-      email: "rajesh.kumar@hospital.com",
-      status: "On Duty",
-      shift: "Morning",
-      consultationFee: "₹800"
-    },
-    {
-      id: 2,
-      name: "Sr. Priya Sharma",
-      role: "Head Nurse",
-      department: "ICU",
-      qualification: "BSc Nursing",
-      experience: "12 years",
-      phone: "+91 98765 43211",
-      email: "priya.sharma@hospital.com",
-      status: "On Duty",
-      shift: "Night",
-      consultationFee: null
-    },
-    {
-      id: 3,
-      name: "Dr. Anjali Patel",
-      role: "Pediatrician",
-      department: "Pediatrics",
-      qualification: "MBBS, MD Pediatrics",
-      experience: "8 years",
-      phone: "+91 98765 43212",
-      email: "anjali.patel@hospital.com",
-      status: "Off Duty",
-      shift: "Evening",
-      consultationFee: "₹600"
-    },
-    {
-      id: 4,
-      name: "Ramesh Technician",
-      role: "Lab Technician",
-      department: "Laboratory",
-      qualification: "DMLT",
-      experience: "10 years",
-      phone: "+91 98765 43213",
-      email: "ramesh.tech@hospital.com",
-      status: "On Duty",
-      shift: "Morning",
-      consultationFee: null
-    }
-  ];
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const fetchStaffMembers = useCallback(async () => {
+  setLoading(true);
+  try {
+    const response = await api.get('/staff', {
+      params: {
+        department: selectedDepartment === 'all' ? undefined : selectedDepartment,
+        search: searchQuery || undefined
+      }
+    });
+    setStaffMembers(response.data);
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+    toast({
+      title: "Error",
+      description: "Failed to fetch staff members",
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+}, [selectedDepartment, searchQuery, toast]);
+
+useEffect(() => {
+  const debounceTimer = setTimeout(() => {
+    fetchStaffMembers();
+  }, 300); // Debounce search for better performance
+
+  return () => clearTimeout(debounceTimer);
+}, [selectedDepartment, searchQuery, fetchStaffMembers]);
 
   const departments = ["Cardiology", "ICU", "Pediatrics", "Laboratory", "Emergency", "Orthopedics"];
 
-  const filteredStaff = staff.filter(member => {
+  const filteredStaff = staffMembers.filter(member => {
     const matchesDepartment = selectedDepartment === "all" || member.department === selectedDepartment;
-    const matchesSearch = member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = !searchQuery || 
+                         member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          member.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          member.department.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesDepartment && matchesSearch;
@@ -102,7 +101,7 @@ const Staff = () => {
     return <UserCheck className="h-4 w-4" />;
   };
 
-  const handleAddStaff = (e: React.FormEvent) => {
+  const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!newStaff.name || !newStaff.role || !newStaff.department) {
@@ -114,25 +113,40 @@ const Staff = () => {
       return;
     }
 
-    // Simulate adding staff member
-    console.log("Adding new staff member:", newStaff);
-    
-    toast({
-      title: "Staff Added",
-      description: `${newStaff.name} has been successfully added to the system.`,
-    });
-    
-    // Reset form
-    setNewStaff({
-      name: "",
-      role: "",
-      department: "",
-      qualification: "",
-      phone: "",
-      email: ""
-    });
-    
-    setIsAddModalOpen(false);
+    try {
+      const response = await api.post('/staff', newStaff);
+      
+      if (response.data) {
+        toast({
+          title: "Success",
+          description: `${newStaff.name} has been successfully added to the staff.`,
+        });
+        
+        // Reset form and refresh staff list
+        setNewStaff({
+          name: "",
+          role: "",
+          department: "",
+          qualification: "",
+          experience: "",
+          phone: "",
+          email: "",
+          status: "On Duty",
+          shift: "Morning",
+          consultationFee: ""
+        });
+        
+        setIsAddModalOpen(false);
+        fetchStaffMembers(); // Refresh the staff list
+      }
+    } catch (error) {
+      console.error('Error adding staff member:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add staff member. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -216,14 +230,14 @@ const Staff = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{staff.length}</div>
+            <div className="text-2xl font-bold text-gray-900">{staffMembers.length}</div>
             <div className="text-sm text-gray-600">Total Staff</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-green-600">
-              {staff.filter(s => s.status === "On Duty").length}
+              {staffMembers.filter(s => s.status === "On Duty").length}
             </div>
             <div className="text-sm text-gray-600">On Duty</div>
           </CardContent>
@@ -231,7 +245,7 @@ const Staff = () => {
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">
-              {staff.filter(s => s.role.includes("Dr.")).length}
+              {staffMembers.filter(s => s.role.includes("Dr.")).length}
             </div>
             <div className="text-sm text-gray-600">Doctors</div>
           </CardContent>
@@ -239,7 +253,7 @@ const Staff = () => {
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-purple-600">
-              {staff.filter(s => s.role.includes("Nurse")).length}
+              {staffMembers.filter(s => s.role.includes("Nurse")).length}
             </div>
             <div className="text-sm text-gray-600">Nurses</div>
           </CardContent>
