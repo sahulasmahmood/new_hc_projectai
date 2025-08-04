@@ -32,16 +32,21 @@ async function processSimpleChat(message, sessionId, patientPhone = null, userId
       messages: session.messages || [],
     };
     
+    console.log(`🔍 SimpleChatService - Session booking data:`, session.bookingData);
+    console.log(`🔍 SimpleChatService - Patient context:`, patientContext);
+    
     // Add patient info if available
     if (patientContext) {
       conversationContext.patientInfo = patientContext;
       
-      // Pre-fill known patient data in booking
+      // Pre-fill known patient data in booking (only if not already set)
       if (!conversationContext.bookingData.patientName && patientContext.name) {
         conversationContext.bookingData.patientName = patientContext.name;
+        console.log(`✅ Pre-filled patient name: ${patientContext.name}`);
       }
       if (!conversationContext.bookingData.patientPhone && patientContext.phone) {
         conversationContext.bookingData.patientPhone = patientContext.phone;
+        console.log(`✅ Pre-filled patient phone: ${patientContext.phone}`);
       }
       if (!conversationContext.bookingData.patientEmail && patientContext.email) {
         conversationContext.bookingData.patientEmail = patientContext.email;
@@ -50,6 +55,18 @@ async function processSimpleChat(message, sessionId, patientPhone = null, userId
         conversationContext.bookingData.patientAge = patientContext.age;
       }
     }
+    
+    // SAFETY CHECK: Clean up any null values that might be stored in session
+    if (conversationContext.bookingData.patientName === null || conversationContext.bookingData.patientName === 'null') {
+      delete conversationContext.bookingData.patientName;
+      console.log(`🧹 SimpleChatService - Cleaned up null patientName from session`);
+    }
+    if (conversationContext.bookingData.patientPhone === null || conversationContext.bookingData.patientPhone === 'null') {
+      delete conversationContext.bookingData.patientPhone;
+      console.log(`🧹 SimpleChatService - Cleaned up null patientPhone from session`);
+    }
+    
+    console.log(`🔍 SimpleChatService - Final conversation context booking data:`, conversationContext.bookingData);
     
     // Add user message to session
     await addMessageToSession(sessionId, 'user', message);
