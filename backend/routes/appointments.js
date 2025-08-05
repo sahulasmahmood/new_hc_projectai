@@ -9,6 +9,7 @@ const {
   rescheduleAppointment,
   swapAppointments
 } = require('../controllers/appointments/appointments');
+const { checkSlotAvailability } = require('../controllers/appointments/availability');
 
 // Get all appointments
 router.get('/appointments', getAllAppointments);
@@ -30,5 +31,8 @@ router.post('/appointments/swap', swapAppointments);
 
 // Delete appointment
 router.delete('/appointments/:id', deleteAppointment);
+
+// Check slot availability
+router.post('/appointments/check-availability', checkSlotAvailability);
 
 module.exports = router;

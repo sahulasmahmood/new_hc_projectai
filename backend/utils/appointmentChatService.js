@@ -916,7 +916,7 @@ const handleDateSelection = async (parsed, context) => {
   };
 };
 
-// Simplified slot/time selection with better matching
+// Simplified slot/time selection with real-time availability check
 const handleSlotSelection = async (parsed, context) => {
   const userMessage = parsed.originalMessage.trim();
   console.log(`🕐 Handling slot selection - User message: "${userMessage}"`);
@@ -925,6 +925,52 @@ const handleSlotSelection = async (parsed, context) => {
     `🕐 Available slots:`,
     context.availableSlots.map((s) => s.time)
   );
+
+  // First, check if the selected slot is still available
+  const selectedSlot = context.availableSlots?.find(
+    slot => slot.time === parsed.extractedTime || 
+           slot.time === normalizeTimeFormat(parsed.extractedTime)
+  );
+
+  if (selectedSlot) {
+    console.log(`🔍 Checking real-time availability for ${selectedSlot.time} on ${selectedSlot.date}`);
+    
+    // Check if the slot is still available
+    const existingAppointment = await prisma.appointment.findFirst({
+      where: {
+        date: {
+          equals: new Date(selectedSlot.date)
+        },
+        time: {
+          equals: selectedSlot.time
+        },
+        status: {
+          notIn: ["Cancelled", "Completed"]
+        }
+      }
+    });
+
+    if (existingAppointment) {
+      console.log(`❌ Slot ${selectedSlot.time} was just taken`);
+      
+      // Get next available slots
+      const nextSlots = await getAvailableSlots(selectedSlot.date);
+      const availableSlots = nextSlots.filter(slot => 
+        !context.availableSlots.some(s => s.time === slot.time && s.date === slot.date)
+      );
+
+      return {
+        message: `I apologize, but that time slot was just taken by another patient. Here are some other available times:\n\n${
+          availableSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+        }\n\nWould you like any of these times instead?`,
+        conversationContext: {
+          ...context,
+          state: CONVERSATION_STATES.SHOWING_SLOTS,
+          availableSlots
+        }
+      };
+    }
+  }
 
   // PRIORITY CHECK: Detect if user wants to change date instead of selecting time
   if (parsed.extractedDate || parsed.datePreference) {
@@ -2052,6 +2098,44 @@ const handleBookingConfirmation = async (parsed, context) => {
   console.log(`🔍 Checking confirmation for message: "${message}"`);
   const isConfirming = /yes|confirm|book|ok|sure|proceed/i.test(message);
   const isDenying = /no|cancel|stop|change/i.test(message);
+
+  // If confirming, do one final availability check before proceeding
+  if (isConfirming && context.bookingData?.selectedSlot) {
+    const { date, time } = context.bookingData.selectedSlot;
+    
+    console.log(`🔒 Final availability check for ${time} on ${date}`);
+    
+    const existingAppointment = await prisma.appointment.findFirst({
+      where: {
+        date: {
+          equals: new Date(date)
+        },
+        time: {
+          equals: time
+        },
+        status: {
+          notIn: ["Cancelled", "Completed"]
+        }
+      }
+    });
+
+    if (existingAppointment) {
+      console.log(`❌ Slot was taken during confirmation`);
+      
+      // Get next available slots
+      const nextSlots = await getAvailableSlots(date);
+      return {
+        message: `I apologize, but someone just booked that time slot while we were talking. Here are the next available times:\n\n${
+          nextSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+        }\n\nWould you like any of these times instead?`,
+        conversationContext: {
+          ...context,
+          state: CONVERSATION_STATES.SHOWING_SLOTS,
+          availableSlots: nextSlots
+        }
+      };
+    }
+  }
 
   console.log(`✅ Is confirming: ${isConfirming}, Is denying: ${isDenying}`);
 

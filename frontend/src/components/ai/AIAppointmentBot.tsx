@@ -37,9 +37,11 @@ interface Message {
   availableSlots?: AppointmentSlot[];
   suggestedActions?: string[];
   urgency?: string;
-  bookingData?: any;
+  bookingData?: Record<string, unknown>;
   appointmentBooked?: boolean;
   appointmentDetails?: unknown;
+  intent?: string;
+  patient?: Patient;
 }
 
 interface AppointmentSlot {
@@ -145,10 +147,56 @@ const AIAppointmentBot = ({
     }
   };
 
-  const handleSlotSelection = (slot: AppointmentSlot) => {
-    // Send confirmation message through chat
-    const confirmMessage = `I'd like to book the ${slot.time} slot on ${slot.displayDate}`;
-    sendMessage(confirmMessage);
+  const handleSlotSelection = async (slot: AppointmentSlot) => {
+    setIsTyping(true);
+    try {
+      // Check slot availability first
+      const response = await axios.post(
+        `${API_URL}/appointments/check-availability`,
+        {
+          date: slot.date,
+          time: slot.time,
+        }
+      );
+
+      if (response.data.available) {
+        // Slot is available, proceed with booking
+        const confirmMessage = `I'd like to book the ${slot.time} slot on ${slot.displayDate}`;
+        sendMessage(confirmMessage);
+      }
+    } catch (error: unknown) {
+      console.error("Error checking slot availability:", error);
+
+      // Type guard to check if error is an Axios error
+      if (
+        typeof error === 'object' && 
+        error !== null && 
+        'response' in error && 
+        error.response && 
+        typeof error.response === 'object' && 
+        'status' in error.response
+      ) {
+        // Now TypeScript knows error.response exists and has status
+        if (error.response.status === 409) {
+          const responseData = error.response as { data?: { message?: string } };
+          toast({
+            title: "Slot Already Booked",
+            description:
+              responseData.data?.message ||
+              "This time slot is already booked. Please select another time.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to check slot availability. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleQuickAction = (action: string, message: Message) => {
