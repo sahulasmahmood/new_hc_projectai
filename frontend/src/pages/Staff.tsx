@@ -5,43 +5,26 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+// Removed Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger import as dialogs are handled in StaffEditDialog
 import { Users, Plus, Search, Filter, Stethoscope, User, UserCheck, Clock, Phone, Mail, MapPin } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
-interface StaffMember {
-  id: number;
-  name: string;
-  role: string;
-  department: string;
-  qualification: string;
-  experience?: string;
-  phone: string;
-  email: string;
-  status: string;
-  shift?: string;
-  consultationFee?: string;
-}
+import { StaffMember } from "@/types/staff";
+import StaffDetailsDialog from "@/components/staff/StaffDetailsDialog";
+import StaffEditDialog from "@/components/staff/StaffEditDialog";
+import { useToast } from "@/hooks/use-toast";
 
 const Staff = () => {
   const { toast } = useToast();
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [newStaff, setNewStaff] = useState({
-    name: "",
-    role: "",
-    department: "",
-    qualification: "",
-    experience: "",
-    phone: "",
-    email: "",
-    status: "On Duty",
-    shift: "Morning",
-    consultationFee: ""
-  });
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [staffToEdit, setStaffToEdit] = useState<StaffMember | null>(null);
+
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -101,53 +84,7 @@ useEffect(() => {
     return <UserCheck className="h-4 w-4" />;
   };
 
-  const handleAddStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newStaff.name || !newStaff.role || !newStaff.department) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
 
-    try {
-      const response = await api.post('/staff', newStaff);
-      
-      if (response.data) {
-        toast({
-          title: "Success",
-          description: `${newStaff.name} has been successfully added to the staff.`,
-        });
-        
-        // Reset form and refresh staff list
-        setNewStaff({
-          name: "",
-          role: "",
-          department: "",
-          qualification: "",
-          experience: "",
-          phone: "",
-          email: "",
-          status: "On Duty",
-          shift: "Morning",
-          consultationFee: ""
-        });
-        
-        setIsAddModalOpen(false);
-        fetchStaffMembers(); // Refresh the staff list
-      }
-    } catch (error) {
-      console.error('Error adding staff member:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add staff member. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -156,74 +93,10 @@ useEffect(() => {
           <Users className="h-8 w-8 text-medical-500" />
           <h1 className="text-3xl font-bold text-gray-900">Staff Management</h1>
         </div>
-        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-medical-500 hover:bg-medical-600">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Staff
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Staff Member</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAddStaff} className="space-y-4">
-              <Input 
-                placeholder="Full Name *" 
-                value={newStaff.name}
-                onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
-                required
-              />
-              <Select value={newStaff.role} onValueChange={(value) => setNewStaff({...newStaff, role: value})}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Role *" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Doctor">Doctor</SelectItem>
-                  <SelectItem value="Nurse">Nurse</SelectItem>
-                  <SelectItem value="Technician">Technician</SelectItem>
-                  <SelectItem value="Admin Staff">Admin Staff</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={newStaff.department} onValueChange={(value) => setNewStaff({...newStaff, department: value})}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Department *" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((dept) => (
-                    <SelectItem key={dept} value={dept}>
-                      {dept}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input 
-                placeholder="Qualification" 
-                value={newStaff.qualification}
-                onChange={(e) => setNewStaff({...newStaff, qualification: e.target.value})}
-              />
-              <Input 
-                placeholder="Phone Number" 
-                value={newStaff.phone}
-                onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
-              />
-              <Input 
-                placeholder="Email Address" 
-                type="email"
-                value={newStaff.email}
-                onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
-              />
-              <div className="flex gap-2">
-                <Button type="button" onClick={() => setIsAddModalOpen(false)} variant="outline">
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-medical-500 hover:bg-medical-600">
-                  Add Staff
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button className="bg-medical-500 hover:bg-medical-600" onClick={() => setIsAddModalOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Staff
+        </Button>
       </div>
 
       {/* Summary Cards */}
@@ -296,7 +169,14 @@ useEffect(() => {
       {/* Staff Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredStaff.map((member) => (
-          <Card key={member.id} className="hover:shadow-lg transition-shadow">
+          <Card 
+            key={member.id} 
+            className="hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => {
+              setSelectedStaff(member);
+              setIsDetailsOpen(true);
+            }}
+          >
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -372,6 +252,40 @@ useEffect(() => {
           </CardContent>
         </Card>
       )}
+
+      {/* Staff Details Dialog */}
+      <StaffDetailsDialog
+        staff={selectedStaff}
+        open={isDetailsOpen}
+        onOpenChange={setIsDetailsOpen}
+        onEdit={(staff) => {
+          setStaffToEdit(staff);
+          setIsDetailsOpen(false);
+          setIsEditOpen(true);
+        }}
+      />
+
+      {/* Staff Edit Dialog */}
+      <StaffEditDialog
+        staff={staffToEdit}
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        onSave={() => {
+          setStaffToEdit(null);
+          fetchStaffMembers();
+        }}
+      />
+
+      {/* Add Staff Dialog */}
+      <StaffEditDialog
+        staff={null}
+        open={isAddModalOpen}
+        onOpenChange={setIsAddModalOpen}
+        onSave={() => {
+          setIsAddModalOpen(false);
+          fetchStaffMembers();
+        }}
+      />
     </div>
   );
 };

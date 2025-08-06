@@ -35,6 +35,7 @@ import { useHospitalSettings } from "@/hooks/settings_hook/use-hospital-settings
 import EmailConfiguration from "@/components/settings/EmailConfiguration";
 import CategoryManagement from "@/components/settings/CategoryManagement";
 import SupplierManagement from "@/components/settings/SupplierManagement";
+import StaffSettingsManagement from "@/components/settings/StaffSettingsManagement";
 
 const defaultHospitalSettings = {
   name: "",
@@ -125,7 +126,7 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="hospital" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-9">
           <TabsTrigger value="hospital">Hospital</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
@@ -134,6 +135,7 @@ const Settings = () => {
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="staff">Staff</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hospital" className="space-y-6">
@@ -538,6 +540,10 @@ const Settings = () => {
 
         <TabsContent value="email">
           <EmailConfiguration />
+        </TabsContent>
+
+        <TabsContent value="staff">
+          <StaffSettingsManagement />
         </TabsContent>
       </Tabs>
     </div>

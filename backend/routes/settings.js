@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
 
+const {
+  getStaffSettings,
+  updateStaffSettings,
+  addRole,
+  addDepartment,
+  addShift,
+  deleteRole,
+  deleteDepartment,
+  deleteShift
+} = require('../controllers/settings/staffSettings/staffSettings');
 
 const {
   getHospitalSettings,
@@ -38,6 +48,16 @@ const {
   deleteSupplier,
   restoreSupplier
 } = require('../controllers/settings/inventorySettings/suppliers');
+
+// Staff Settings Routes
+router.get('/staff-settings', getStaffSettings);
+router.post('/staff-settings', updateStaffSettings);
+router.post('/staff-settings/roles', addRole);
+router.post('/staff-settings/departments', addDepartment);
+router.post('/staff-settings/shifts', addShift);
+router.delete('/staff-settings/roles', deleteRole);
+router.delete('/staff-settings/departments', deleteDepartment);
+router.delete('/staff-settings/shifts', deleteShift);
 
 router.get('/hospital-settings', getHospitalSettings);
 router.post('/hospital-settings', saveHospitalSettings);

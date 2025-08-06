@@ -207,3 +207,12 @@ model Staff {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model StaffSettings {
+  id          Int      @id @default(autoincrement())
+  roles       String[] // Available roles (e.g., "Doctor", "Nurse", etc.)
+  departments String[] // Available departments (e.g., "Cardiology", "ICU", etc.)
+  shifts      String[] // Available shifts (e.g., "Morning Shift", "Night Shift", etc.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
