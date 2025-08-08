@@ -1,211 +1,461 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { Trash2, Users, PenSquare, Plus, Building, Clock, X } from "lucide-react";
 import api from "@/lib/api";
 
-interface StaffSettings {
-  roles: string[];
-  departments: string[];
-  shifts: string[];
+interface Department {
+  id: number;
+  name: string;
 }
 
-const defaultShifts = [
-  "Morning Shift",
-  "Evening Shift",
-  "Night Shift",
-  "General Shift"
-];
+interface Shift {
+  id: number;
+  name: string;
+  startTime: string;
+  endTime: string;
+}
 
 const StaffSettingsManagement = () => {
   const { toast } = useToast();
-  const [settings, setSettings] = useState<StaffSettings>({
-    roles: [],
-    departments: [],
-    shifts: []
-  });
-  const [loading, setLoading] = useState(false);
-  const [newRole, setNewRole] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [newDepartment, setNewDepartment] = useState("");
-  const [newShift, setNewShift] = useState("");
+  const [newShift, setNewShift] = useState({
+    name: "",
+    startTime: "",
+    endTime: "",
+  });
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
 
-  const fetchSettings = async () => {
-    setLoading(true);
+  const fetchDepartments = useCallback(async () => {
     try {
-      const res = await api.get("/settings/staff-settings");
-      setSettings({
-        ...res.data,
-        shifts: res.data.shifts || defaultShifts
-      });
+      const response = await api.get('/settings/staff-settings/departments');
+      if (response.data.success) {
+        setDepartments(response.data.departments);
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch staff settings",
+        description: "Failed to fetch departments",
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [toast]);
+
+  const fetchShifts = useCallback(async () => {
+    try {
+      const response = await api.get('/settings/staff-settings/shifts');
+      if (response.data.success) {
+        setShifts(response.data.shifts);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch shifts",
+        variant: "destructive"
+      });
+    }
+  }, [toast]);
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    fetchDepartments();
+    fetchShifts();
+  }, [fetchDepartments, fetchShifts]);
 
-  const handleAdd = async (type: "role" | "department" | "shift") => {
-    let value = "";
-    if (type === "role") value = newRole.trim();
-    if (type === "department") value = newDepartment.trim();
-    if (type === "shift") value = newShift.trim();
-    if (!value) return;
+  // Department handlers
+  const handleSaveDepartment = async () => {
+    if (!newDepartment.trim()) return;
+    
     try {
-      setLoading(true);
-      if (type === "shift") {
-        // Save shifts as part of staff settings
-        const updatedShifts = [...(settings.shifts || []), value];
-        await api.put("/settings/staff-settings", {
-          ...settings,
-          shifts: updatedShifts
+      const method = editingDepartment ? "PUT" : "POST";
+      const body = editingDepartment
+        ? { id: editingDepartment.id, name: newDepartment }
+        : { name: newDepartment };
+
+      const response = await api[method.toLowerCase() as 'put' | 'post']('/settings/staff-settings/departments', body);
+      if (response.data.success) {
+        fetchDepartments();
+        setNewDepartment("");
+        setEditingDepartment(null);
+        toast({
+          title: "Success",
+          description: `Department ${editingDepartment ? 'updated' : 'created'} successfully`
         });
-        setSettings((prev) => ({ ...prev, shifts: updatedShifts }));
-        setNewShift("");
-        toast({ title: "Success", description: "Shift added" });
-      } else {
-        await api.post(`/settings/staff-settings/${type}s`, { [type]: value });
-        toast({ title: "Success", description: `${type.charAt(0).toUpperCase() + type.slice(1)} added` });
-        if (type === "role") setNewRole("");
-        if (type === "department") setNewDepartment("");
-        fetchSettings();
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: `Failed to add ${type}`,
+        description: `Failed to ${editingDepartment ? 'update' : 'create'} department`,
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleDelete = async (type: "role" | "department" | "shift", value: string) => {
+  const handleEditDepartment = (department: Department) => {
+    setEditingDepartment(department);
+    setNewDepartment(department.name);
+  };
+
+  const handleCancelDepartmentEdit = () => {
+    setEditingDepartment(null);
+    setNewDepartment("");
+  };
+
+  const handleDeleteDepartment = async (id: number) => {
     try {
-      setLoading(true);
-      if (type === "shift") {
-        const updatedShifts = (settings.shifts || []).filter((s) => s !== value);
-        await api.put("/settings/staff-settings", {
-          ...settings,
-          shifts: updatedShifts
+      const response = await api.delete('/settings/staff-settings/departments', {
+        data: { id }
+      });
+      if (response.data.success) {
+        fetchDepartments();
+        toast({
+          title: "Success",
+          description: "Department deleted successfully"
         });
-        setSettings((prev) => ({ ...prev, shifts: updatedShifts }));
-        toast({ title: "Success", description: "Shift deleted" });
-      } else {
-        await api.delete(`/settings/staff-settings/${type}s`, { data: { [type]: value } });
-        toast({ title: "Success", description: `${type.charAt(0).toUpperCase() + type.slice(1)} deleted` });
-        fetchSettings();
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: `Failed to delete ${type}`,
+        description: "Failed to delete department",
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
     }
+  };
+
+  // Helper function to convert 24h time to 12h format with AM/PM
+  const formatTimeTo12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hours, minutes] = time24.split(':');
+    const hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minutes} ${ampm}`;
+  };
+
+  // Helper function to convert 12h time to 24h format
+  const formatTimeTo24Hour = (time12: string) => {
+    if (!time12) return '';
+    const [time, period] = time12.split(' ');
+    const [hours, minutes] = time.split(':');
+    let hour = parseInt(hours, 10);
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    return `${hour.toString().padStart(2, '0')}:${minutes}`;
+  };
+
+  const handleSaveShift = async () => {
+    if (!newShift.name.trim() || !newShift.startTime || !newShift.endTime) return;
+    
+    try {
+      const method = editingShift ? "PUT" : "POST";
+      const body = editingShift
+        ? { ...newShift, id: editingShift.id }
+        : newShift;
+
+      const response = await api[method.toLowerCase() as 'put' | 'post']('/settings/staff-settings/shifts', body);
+      if (response.data.success) {
+        fetchShifts();
+        setNewShift({ name: "", startTime: "", endTime: "" });
+        setEditingShift(null);
+        toast({
+          title: "Success",
+          description: `Shift ${editingShift ? 'updated' : 'created'} successfully`
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: `Failed to ${editingShift ? 'update' : 'create'} shift`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteShift = async (id: number) => {
+    try {
+      const response = await api.delete('/settings/staff-settings/shifts', {
+        data: { id }
+      });
+      if (response.data.success) {
+        fetchShifts();
+        toast({
+          title: "Success",
+          description: "Shift deleted successfully"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete shift",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleEditShift = (shift: Shift) => {
+    setEditingShift(shift);
+    // Keep the time in 24-hour format for the input fields
+    setNewShift({
+      name: shift.name,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+    });
+  };
+
+  const handleCancelShiftEdit = () => {
+    setEditingShift(null);
+    setNewShift({ name: "", startTime: "", endTime: "" });
   };
 
   return (
-    <div className="space-y-8">
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Roles</h2>
-          <div className="flex gap-2 mb-4">
-            <Input
-              placeholder="Add new role"
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value)}
-              disabled={loading}
-            />
-            <Button onClick={() => handleAdd("role")}>Add</Button>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center">
+          <Users className="h-5 w-5 mr-2" />
+          Staff Settings
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-10">
+        {/* Departments Section */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 rounded-lg bg-blue-500 text-white">
+              <Building className="w-5 h-5" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-800">Departments</h2>
+            <div className="ml-auto bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
+              {departments.length} Total
+            </div>
           </div>
-          <ul className="space-y-2">
-            {settings.roles.map((role) => (
-              <li key={role} className="flex items-center gap-2">
-                <span>{role}</span>
+          
+          <div className="bg-white rounded-lg p-4 mb-6 shadow-sm border">
+            <div className="flex gap-3">
+              <Input
+                placeholder="Enter department name (e.g., Cardiology, Emergency)"
+                value={newDepartment}
+                onChange={(e) => setNewDepartment(e.target.value)}
+                className="flex-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              />
+              <Button
+                className="text-white px-6"
+                style={{ backgroundColor: '#3a72ec' }}
+                onClick={handleSaveDepartment}
+                disabled={!newDepartment.trim()}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                {editingDepartment ? "Update" : "Add"}
+              </Button>
+              {editingDepartment && (
                 <Button
-                  size="sm"
                   variant="outline"
-                  onClick={() => handleDelete("role", role)}
-                  disabled={loading}
+                  onClick={handleCancelDepartmentEdit}
+                  className="px-4"
                 >
-                  Delete
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
                 </Button>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Departments</h2>
-          <div className="flex gap-2 mb-4">
-            <Input
-              placeholder="Add new department"
-              value={newDepartment}
-              onChange={(e) => setNewDepartment(e.target.value)}
-              disabled={loading}
-            />
-            <Button onClick={() => handleAdd("department")}>Add</Button>
+              )}
+            </div>
           </div>
-          <ul className="space-y-2">
-            {settings.departments.map((department) => (
-              <li key={department} className="flex items-center gap-2">
-                <span>{department}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleDelete("department", department)}
-                  disabled={loading}
-                >
-                  Delete
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Shifts</h2>
-          <div className="flex gap-2 mb-4">
-            <Input
-              placeholder="Add new shift"
-              value={newShift}
-              onChange={(e) => setNewShift(e.target.value)}
-              disabled={loading}
-            />
-            <Button onClick={() => handleAdd("shift")}>Add</Button>
+          
+          <div className="bg-white rounded-lg overflow-hidden shadow-sm border">
+            {departments.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Building className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium mb-2">No departments yet</h3>
+                <p className="text-sm">Add your first department to get started</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">
+                      Department Name
+                    </th>
+                    <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {departments.map((department, index) => (
+                    <tr
+                      key={department.id}
+                      className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${
+                        editingDepartment?.id === department.id ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-medium">
+                            {index + 1}
+                          </div>
+                          <span className="font-medium text-gray-800">{department.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-blue-500 hover:bg-blue-50"
+                            onClick={() => handleEditDepartment(department)}
+                          >
+                            <PenSquare className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                            onClick={() => handleDeleteDepartment(department.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-          <ul className="space-y-2">
-            {(settings.shifts || defaultShifts).map((shift) => (
-              <li key={shift} className="flex items-center gap-2">
-                <span>{shift}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleDelete("shift", shift)}
-                  disabled={loading}
-                >
-                  Delete
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+
+        {/* Working Shifts Section */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-6">
+            Working Shifts
+          </h2>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Shift Name
+              </label>
+              <Input
+                placeholder="Shift Name"
+                value={newShift.name}
+                onChange={(e) =>
+                  setNewShift({ ...newShift, name: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Shift Start Time
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="time"
+                  value={newShift.startTime}
+                  onChange={(e) => {
+                    const time24 = e.target.value;
+                    setNewShift({ ...newShift, startTime: time24 });
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <div className="text-sm text-gray-500 mt-1">
+                {newShift.startTime ? formatTimeTo12Hour(newShift.startTime) : 'Select time'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Shift End Time
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="time"
+                  value={newShift.endTime}
+                  onChange={(e) => {
+                    const time24 = e.target.value;
+                    setNewShift({ ...newShift, endTime: time24 });
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <div className="text-sm text-gray-500 mt-1">
+                {newShift.endTime ? formatTimeTo12Hour(newShift.endTime) : 'Select time'}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-center gap-3">
+            <Button
+              className="w-44 text-white"
+              style={{ backgroundColor: '#3a72ec' }}
+              onClick={handleSaveShift}
+              disabled={!newShift.name.trim() || !newShift.startTime || !newShift.endTime}
+            >
+              {editingShift ? "Update" : "Save"}
+            </Button>
+            {editingShift && (
+              <Button
+                variant="outline"
+                onClick={handleCancelShiftEdit}
+                className="w-32"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+            )}
+          </div>
+
+          <div className="bg-gray-50 rounded-lg overflow-hidden mt-6">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-700">
+                    Shift Name
+                  </th>
+                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-700">
+                    Shift Timings
+                  </th>
+                  <th className="text-right py-4 px-6 text-sm font-medium text-gray-700">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {shifts.map((shift) => (
+                  <tr
+                    key={shift.id}
+                    className="border-b border-gray-200 last:border-0"
+                  >
+                    <td className="py-4 px-6 text-sm text-gray-700">
+                      {shift.name}
+                    </td>
+                    <td className="py-4 px-6 text-sm text-gray-700">
+                      {formatTimeTo12Hour(shift.startTime)} - {formatTimeTo12Hour(shift.endTime)}
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-blue-500 mr-2"
+                        onClick={() => handleEditShift(shift)}
+                      >
+                        <PenSquare className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
+                        onClick={() => handleDeleteShift(shift.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

@@ -602,96 +602,141 @@ const Emergency = () => {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-4">
-            {filteredCases.map((case_) => (
-              <Card key={case_.id} className="hover:shadow-lg transition-shadow border-l-4 border-l-red-500">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-4">
-                        <div className="font-semibold text-lg">{case_.caseId}</div>
-                        <Badge className={getPriorityColor(case_.triagePriority)}>
-                          {case_.triagePriority}
-                        </Badge>
-                        <Badge className={getStatusColor(case_.status)}>
-                          {case_.status}
-                        </Badge>
+          {/* Emergency Cases */}
+          {filteredCases.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <Siren className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No Emergency Cases
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  {emergencyCases.length === 0 
+                    ? "No emergency cases have been registered yet. Click 'New Emergency Case' to register the first case."
+                    : selectedPriority === "all"
+                    ? `No emergency cases found for ${selectedDate}. Try selecting a different date or check if there are cases on other dates.`
+                    : `No ${selectedPriority} priority cases found for ${selectedDate}. Try adjusting your filters or selecting a different date.`
+                  }
+                </p>
+                <div className="flex justify-center gap-3">
+                  <Button 
+                    className="bg-red-500 hover:bg-red-600"
+                    onClick={() => setRegisterDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Emergency Case
+                  </Button>
+                  {selectedPriority !== "all" && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setSelectedPriority("all")}
+                    >
+                      Show All Priorities
+                    </Button>
+                  )}
+                  {selectedDate !== new Date().toISOString().split('T')[0] && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                    >
+                      Show Today's Cases
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredCases.map((case_) => (
+                <Card key={case_.id} className="hover:shadow-lg transition-shadow border-l-4 border-l-red-500">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                          <div className="font-semibold text-lg">{case_.caseId}</div>
+                          <Badge className={getPriorityColor(case_.triagePriority)}>
+                            {case_.triagePriority}
+                          </Badge>
+                          <Badge className={getStatusColor(case_.status)}>
+                            {case_.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-gray-500" />
+                          <span className="font-medium">{case_.patientName}</span>
+                          <span className="text-sm text-gray-600">({case_.age}Y, {case_.gender})</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone className="h-4 w-4" />
+                          <span>{case_.phone}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-500" />
-                        <span className="font-medium">{case_.patientName}</span>
-                        <span className="text-sm text-gray-600">({case_.age}Y, {case_.gender})</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Phone className="h-4 w-4" />
-                        <span>{case_.phone}</span>
+                      <div className="text-right space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Clock className="h-4 w-4 text-gray-500" />
+                          <span>{formatLocalDateTime(case_.arrivalTime)}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Assigned to: {case_.assignedTo}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right space-y-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-4 w-4 text-gray-500" />
-                        <span>{formatLocalDateTime(case_.arrivalTime)}</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        Assigned to: {case_.assignedTo}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="mt-4">
-                    <div className="text-sm font-medium mb-2">Chief Complaint:</div>
-                    <div className="text-sm bg-gray-50 p-3 rounded-lg">{case_.chiefComplaint}</div>
-                  </div>
+                    <div className="mt-4">
+                      <div className="text-sm font-medium mb-2">Chief Complaint:</div>
+                      <div className="text-sm bg-gray-50 p-3 rounded-lg">{case_.chiefComplaint}</div>
+                    </div>
 
-                  <div className="mt-4 grid grid-cols-4 gap-4">
-                    <div className="bg-blue-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Heart className="h-4 w-4 text-blue-600" />
-                        <span className="text-xs font-medium">BP</span>
+                    <div className="mt-4 grid grid-cols-4 gap-4">
+                      <div className="bg-blue-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Heart className="h-4 w-4 text-blue-600" />
+                          <span className="text-xs font-medium">BP</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.bp}</div>
                       </div>
-                      <div className="text-sm font-semibold">{case_.vitals.bp}</div>
-                    </div>
-                    <div className="bg-green-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Activity className="h-4 w-4 text-green-600" />
-                        <span className="text-xs font-medium">Pulse</span>
+                      <div className="bg-green-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Activity className="h-4 w-4 text-green-600" />
+                          <span className="text-xs font-medium">Pulse</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.pulse}</div>
                       </div>
-                      <div className="text-sm font-semibold">{case_.vitals.pulse}</div>
-                    </div>
-                    <div className="bg-yellow-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Zap className="h-4 w-4 text-yellow-600" />
-                        <span className="text-xs font-medium">Temp</span>
+                      <div className="bg-yellow-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Zap className="h-4 w-4 text-yellow-600" />
+                          <span className="text-xs font-medium">Temp</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.temp}</div>
                       </div>
-                      <div className="text-sm font-semibold">{case_.vitals.temp}</div>
-                    </div>
-                    <div className="bg-purple-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Activity className="h-4 w-4 text-purple-600" />
-                        <span className="text-xs font-medium">SpO2</span>
+                      <div className="bg-purple-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Activity className="h-4 w-4 text-purple-600" />
+                          <span className="text-xs font-medium">SpO2</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.spo2}</div>
                       </div>
-                      <div className="text-sm font-semibold">{case_.vitals.spo2}</div>
                     </div>
-                  </div>
 
-                  <div className="mt-4 flex gap-2">
-                    <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
-                      Update Status
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenFullChart(case_)}>
-                      View Full Chart
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
-                      Transfer
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
-                      Add/Update Vitals
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
+                        Update Status
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleOpenFullChart(case_)}>
+                        View Full Chart
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
+                        Transfer
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
+                        Add/Update Vitals
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="triage">

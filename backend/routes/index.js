@@ -19,7 +19,7 @@ router.use('/settings', settingsRouter);
 router.use('/emergency', emergencyRouter);
 router.use('/inventory', inventoryRouter);
 router.use('/ai', aiRouter);
-router.use('/', staffRouter);
+router.use('/staff', staffRouter);
 /* router.use('/settings/categories', categoriesRouter);
 router.use('/settings/suppliers', suppliersRouter); */
 

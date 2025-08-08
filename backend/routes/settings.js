@@ -1,16 +1,26 @@
 const express = require('express');
 const router = express.Router();
 
+// Legacy staffSettings functions are commented out - using dedicated controllers instead
+// const {
+//   getStaffSettings,
+//   updateStaffSettings,
+//   addRole
+// } = require('../controllers/settings/staffSettings/staffSettings');
+
 const {
-  getStaffSettings,
-  updateStaffSettings,
-  addRole,
-  addDepartment,
-  addShift,
-  deleteRole,
-  deleteDepartment,
-  deleteShift
-} = require('../controllers/settings/staffSettings/staffSettings');
+  getDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment: deleteDepartmentNew
+} = require('../controllers/settings/staffSettings/departments');
+
+const {
+  getShifts,
+  createShift,
+  updateShift,
+  deleteShift: deleteShiftNew
+} = require('../controllers/settings/staffSettings/shifts');
 
 const {
   getHospitalSettings,
@@ -49,15 +59,22 @@ const {
   restoreSupplier
 } = require('../controllers/settings/inventorySettings/suppliers');
 
-// Staff Settings Routes
-router.get('/staff-settings', getStaffSettings);
-router.post('/staff-settings', updateStaffSettings);
-router.post('/staff-settings/roles', addRole);
-router.post('/staff-settings/departments', addDepartment);
-router.post('/staff-settings/shifts', addShift);
-router.delete('/staff-settings/roles', deleteRole);
-router.delete('/staff-settings/departments', deleteDepartment);
-router.delete('/staff-settings/shifts', deleteShift);
+// Legacy Staff Settings Routes - COMMENTED OUT (using dedicated controllers instead)
+// router.get('/staff-settings', getStaffSettings);
+// router.post('/staff-settings', updateStaffSettings);
+// router.post('/staff-settings/roles', addRole);
+
+// Department Routes
+router.get('/staff-settings/departments', getDepartments);
+router.post('/staff-settings/departments', createDepartment);
+router.put('/staff-settings/departments', updateDepartment);
+router.delete('/staff-settings/departments', deleteDepartmentNew);
+
+// Shift Routes
+router.get('/staff-settings/shifts', getShifts);
+router.post('/staff-settings/shifts', createShift);
+router.put('/staff-settings/shifts', updateShift);
+router.delete('/staff-settings/shifts', deleteShiftNew);
 
 router.get('/hospital-settings', getHospitalSettings);
 router.post('/hospital-settings', saveHospitalSettings);

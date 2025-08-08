@@ -26,11 +26,16 @@ export default {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         medical: {
-          50: "#F0FDF9",
-          100: "#CCFBF1",
-          500: "#4FD1C5",
-          600: "#319795",
-          700: "#2C7A7B",
+          50: "#F0FDFA",   // Very light teal
+          100: "#CCFBF1",  // Light teal
+          200: "#99F6E4",  // Lighter teal
+          300: "#5EEAD4",  // Light teal
+          400: "#2DD4BF",  // Medium light teal
+          500: "#4FD1C5",  // Primary teal green (your existing color)
+          600: "#319795",  // Medium teal (your existing color)
+          700: "#2C7A7B",  // Dark teal (your existing color)
+          800: "#285E61",  // Darker teal
+          900: "#234E52",  // Very dark teal
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",

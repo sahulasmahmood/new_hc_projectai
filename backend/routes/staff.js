@@ -5,22 +5,43 @@ const {
   getStaffById,
   createStaff,
   updateStaff,
-  deleteStaff
+  deleteStaff,
+  getDepartments,
+  getShifts,
+  getRoles
 } = require('../controllers/staff/staff');
 
+const {
+  getRolesPermissions,
+  createRolePermission,
+  updateRolePermission,
+  deleteRolePermission
+} = require('../controllers/staff/rolesPermissions');
+
+// Roles and Permissions Routes (must come before /:id routes)
+router.get('/roles-permissions', getRolesPermissions);
+router.post('/roles-permissions', createRolePermission);
+router.put('/roles-permissions', updateRolePermission);
+router.delete('/roles-permissions', deleteRolePermission);
+
+// Dropdown data routes (must come before /:id routes)
+router.get('/departments', getDepartments);
+router.get('/shifts', getShifts);
+router.get('/roles', getRoles);
+
 // GET all staff members
-router.get('/staff', getAllStaff);
+router.get('/', getAllStaff);
 
 // GET staff member by ID
-router.get('/staff/:id', getStaffById);
+router.get('/:id', getStaffById);
 
 // POST create new staff member
-router.post('/staff', createStaff);
+router.post('/', createStaff);
 
 // PUT update staff member
-router.put('/staff/:id', updateStaff);
+router.put('/:id', updateStaff);
 
 // DELETE staff member
-router.delete('/staff/:id', deleteStaff);
+router.delete('/:id', deleteStaff);
 
 module.exports = router;

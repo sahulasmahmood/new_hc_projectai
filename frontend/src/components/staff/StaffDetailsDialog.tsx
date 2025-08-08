@@ -13,7 +13,7 @@ import {
   Clock,
   Award,
   BookOpen,
-  DollarSign,
+  IndianRupee,
   Pencil,
 } from "lucide-react";
 
@@ -38,6 +38,16 @@ const StaffDetailsDialog = ({ staff, open, onOpenChange, onEdit }: StaffDetailsD
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  // Helper function to convert 24h time to 12h format with AM/PM
+  const formatTimeTo12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hours, minutes] = time24.split(':');
+    const hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minutes} ${ampm}`;
   };
 
   return (
@@ -66,8 +76,14 @@ const StaffDetailsDialog = ({ staff, open, onOpenChange, onEdit }: StaffDetailsD
                 </div>
                 <div>
                   <div className="text-sm text-gray-600">Department</div>
-                  <div className="font-medium">{staff.department}</div>
+                  <div className="font-medium">{staff.department?.name || "No Department"}</div>
                 </div>
+                {staff.employeeId && (
+                  <div>
+                    <div className="text-sm text-gray-600">Employee ID</div>
+                    <div className="font-medium">{staff.employeeId}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-sm text-gray-600">Status</div>
                   <Badge className={getStatusColor(staff.status)}>
@@ -101,14 +117,16 @@ const StaffDetailsDialog = ({ staff, open, onOpenChange, onEdit }: StaffDetailsD
                     </div>
                   </div>
                 )}
-                <div>
-                  <div className="text-sm text-gray-600">Location</div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-gray-500" />
-                    <span className="font-medium">{staff.department}</span>
+
+                {staff.shiftTime ? (
+                  <div>
+                    <div className="text-sm text-gray-600">Shift</div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-gray-500" />
+                      <span className="font-medium">{staff.shiftTime.name} ({formatTimeTo12Hour(staff.shiftTime.startTime)} - {formatTimeTo12Hour(staff.shiftTime.endTime)})</span>
+                    </div>
                   </div>
-                </div>
-                {staff.shift && (
+                ) : staff.shift && (
                   <div>
                     <div className="text-sm text-gray-600">Shift</div>
                     <div className="flex items-center gap-2">
@@ -148,14 +166,53 @@ const StaffDetailsDialog = ({ staff, open, onOpenChange, onEdit }: StaffDetailsD
                   <div>
                     <div className="text-sm text-gray-600">Consultation Fee</div>
                     <div className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-gray-500" />
-                      <span className="font-medium">{staff.consultationFee}</span>
+                      <IndianRupee className="h-4 w-4 text-gray-500" />
+                      <span className="font-medium">₹{staff.consultationFee}</span>
                     </div>
+                  </div>
+                )}
+                {staff.dateOfHiring && (
+                  <div>
+                    <div className="text-sm text-gray-600">Date of Hiring</div>
+                    <div className="font-medium">
+                      {new Date(staff.dateOfHiring).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+                {staff.weekOff && (
+                  <div>
+                    <div className="text-sm text-gray-600">Week Off</div>
+                    <div className="font-medium capitalize">{staff.weekOff}</div>
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Personal Information */}
+          {(staff.gender || staff.dateOfBirth) && (
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
+                <div className="space-y-4">
+                  {staff.gender && (
+                    <div>
+                      <div className="text-sm text-gray-600">Gender</div>
+                      <div className="font-medium capitalize">{staff.gender}</div>
+                    </div>
+                  )}
+                  {staff.dateOfBirth && (
+                    <div>
+                      <div className="text-sm text-gray-600">Date of Birth</div>
+                      <div className="font-medium">
+                        {new Date(staff.dateOfBirth).toLocaleDateString()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 mt-6">

@@ -193,26 +193,55 @@ model MedicalReport {
 }
 
 model Staff {
-  id              Int      @id @default(autoincrement())
-  name            String   @db.VarChar(100)
-  role            String   @db.VarChar(50)
-  department      String   @db.VarChar(50)
+  id              Int         @id @default(autoincrement())
+  employeeId      String?     @unique @db.VarChar(50) // Auto-generated employee ID
+  name            String      @db.VarChar(100)
+  role            String      @db.VarChar(50)
+  gender          String?     @db.VarChar(10)
+  dateOfBirth     DateTime?
   qualification   String?
   experience      String?
-  phone           String?  @db.VarChar(20)
-  email           String?  @db.VarChar(100)
-  status          String   @default("On Duty") @db.VarChar(20)
-  shift           String?  @db.VarChar(20)
+  phone           String?     @db.VarChar(20)
+  email           String?     @db.VarChar(100)
+  dateOfHiring    DateTime?
+  status          String      @default("On Duty") @db.VarChar(20)
+  shift           String?     @db.VarChar(20)
+  shiftId         Int?        // Reference to Shift model
+  weekOff         String?     @db.VarChar(20) // Day of the week
   consultationFee String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  documents       String[]    // Array of document paths
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  departmentId    Int?
+  department      Department? @relation(fields: [departmentId], references: [id])
+  shiftTime       Shift?      @relation(fields: [shiftId], references: [id])
+
+  @@index([departmentId])
+  @@index([shiftId])
 }
 
-model StaffSettings {
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  staff     Staff[]
+}
+
+model Shift {
+  id        Int      @id @default(autoincrement())
+  name      String
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  staff     Staff[]  // Relationship with Staff
+}
+
+model RolePermission {
   id          Int      @id @default(autoincrement())
-  roles       String[] // Available roles (e.g., "Doctor", "Nurse", etc.)
-  departments String[] // Available departments (e.g., "Cardiology", "ICU", etc.)
-  shifts      String[] // Available shifts (e.g., "Morning Shift", "Night Shift", etc.)
+  role        String   @unique
+  permissions Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

@@ -1,6 +1,20 @@
-const { PrismaClient } = require('../../../generated/prisma');
-const prisma = new PrismaClient();
+/* const { PrismaClient } = require('../../../generated/prisma');
+const prisma = new PrismaClient(); */
 
+// ============================================================================
+// LEGACY CODE - COMMENTED OUT
+// ============================================================================
+// The following functions were used with the old StaffSettings table which 
+// stored roles, departments, and shifts as JSON arrays. This table was dropped
+// in favor of dedicated Department, Shift, and RolePermission tables.
+// 
+// Current system uses:
+// - backend/controllers/settings/staffSettings/departments.js for departments
+// - backend/controllers/settings/staffSettings/shifts.js for shifts  
+// - backend/controllers/staff/rolesPermissions.js for roles
+// ============================================================================
+
+/*
 // GET staff settings
 const getStaffSettings = async (req, res) => {
   try {
@@ -120,6 +134,7 @@ const addDepartment = async (req, res) => {
     res.status(500).json({ error: 'Failed to add department' });
   }
 };
+
 // Add new shift
 const addShift = async (req, res) => {
   try {
@@ -212,6 +227,7 @@ const deleteDepartment = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete department' });
   }
 };
+
 // Delete shift
 const deleteShift = async (req, res) => {
   try {
@@ -239,14 +255,26 @@ const deleteShift = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete shift' });
   }
 };
+*/
+
+// ============================================================================
+// ACTIVE CODE - Currently Used
+// ============================================================================
+// This file is kept for potential future use or backward compatibility
+// All staff settings functionality has been moved to dedicated controllers:
+// - Departments: backend/controllers/settings/staffSettings/departments.js
+// - Shifts: backend/controllers/settings/staffSettings/shifts.js
+// - Roles: backend/controllers/staff/rolesPermissions.js
+// ============================================================================
 
 module.exports = {
-  getStaffSettings,
-  updateStaffSettings,
-  addRole,
-  addDepartment,
-  addShift,
-  deleteRole,
-  deleteDepartment,
-  deleteShift
+  // All functions commented out - using dedicated controllers instead
+  // getStaffSettings,
+  // updateStaffSettings,
+  // addRole,
+  // addDepartment,
+  // addShift,
+  // deleteRole,
+  // deleteDepartment,
+  // deleteShift
 };
