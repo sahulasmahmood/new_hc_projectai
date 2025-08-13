@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope } from "lucide-react";
+import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope, Clock } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -41,6 +41,11 @@ interface Patient {
   address: string;
   createdFromEmergency?: boolean;
   createdAt: string;
+  consultationStatus?: 'active' | 'completed' | null;
+  consultationStartTime?: string;
+  activeAppointmentId?: number;
+  hasUpcomingAppointments?: boolean;
+  upcomingAppointmentCount?: number;
 }
 
 const Patients = () => {
@@ -54,9 +59,13 @@ const Patients = () => {
     const today = new Date();
     return today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
   });
-  const [filterType, setFilterType] = useState<"lastVisit" | "createdAt" | "all">("lastVisit");
+  const [filterType, setFilterType] = useState<"lastVisit" | "createdAt" | "consultation" | "all">("lastVisit");
   const navigate = useNavigate();
   const isInitialMount = useRef(true);
+  
+  // Check if we're coming from appointments with a consultation ID
+  const urlParams = new URLSearchParams(window.location.search);
+  const consultationId = urlParams.get('consultationId');
 
   // Fetch patients data
   const fetchPatients = async (search?: string) => {
@@ -84,6 +93,11 @@ const Patients = () => {
       // Initial load - fetch without search
       fetchPatients();
       isInitialMount.current = false;
+      
+      // If coming from appointments with consultation ID, set filter to consultation
+      if (consultationId) {
+        setFilterType("consultation");
+      }
     } else {
       // Search with debounce
       const debounceTimer = setTimeout(() => {
@@ -92,12 +106,14 @@ const Patients = () => {
 
       return () => clearTimeout(debounceTimer);
     }
-  }, [searchTerm]);
+  }, [searchTerm, consultationId]);
 
   // Filter patients based on selectedDate and filterType
   const filteredPatients = patients.filter(patient => {
     if (filterType === "all") {
       return true; // Show all patients
+    } else if (filterType === "consultation") {
+      return patient.consultationStatus === 'active'; // Show only patients with active consultations
     } else if (filterType === "lastVisit") {
       if (!patient.lastVisit) return false; // Skip patients with no last visit
       const patientDate = patient.lastVisit.split('T')[0];
@@ -115,17 +131,41 @@ const Patients = () => {
   const currentPatients = filteredPatients.slice(indexOfFirstPatient, indexOfLastPatient);
   const totalPages = Math.ceil(filteredPatients.length / patientsPerPage);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Active": return "bg-green-100 text-green-800";
-      case "Recovery": return "bg-blue-100 text-blue-800";
-      case "Critical": return "bg-red-100 text-red-800";
-      default: return "bg-gray-100 text-gray-800";
+  const getStatusColor = (hasUpcomingAppointments?: boolean) => {
+    // Only show badge for patients with upcoming appointments
+    if (hasUpcomingAppointments) {
+      return "bg-green-100 text-green-800";
     }
+    
+    // No badge for patients without appointments
+    return null;
   };
 
-  const handleStartExam = (patientId: number) => {
-    navigate(`/patient-exam?patientId=${patientId}&role=doctor`);
+  const getDisplayStatus = (hasUpcomingAppointments?: boolean, upcomingCount?: number) => {
+    // Show Active badge only for patients with upcoming appointments
+    if (hasUpcomingAppointments) {
+      return upcomingCount === 1 ? "Active" : `Active (${upcomingCount})`;
+    }
+    
+    // No status to display
+    return null;
+  };
+
+  const shouldShowBadge = (hasUpcomingAppointments?: boolean) => {
+    return hasUpcomingAppointments;
+  };
+
+  const handleStartExam = (patientId: number, appointmentId?: number) => {
+    const params = new URLSearchParams({
+      patientId: patientId.toString(),
+      role: 'doctor'
+    });
+    
+    if (appointmentId) {
+      params.append('appointmentId', appointmentId.toString());
+    }
+    
+    navigate(`/patient-exam?${params.toString()}`);
   };
 
   const handlePageChange = (page: number) => {
@@ -143,7 +183,10 @@ const Patients = () => {
             <h1 className="text-3xl font-bold text-gray-900">Patient Management</h1>
             {filteredPatients.length !== patients.length && filterType !== "all" && (
               <p className="text-sm text-gray-600">
-                Showing {filteredPatients.length} of {patients.length} patients by {filterType === "lastVisit" ? "last visit" : "registration"} date: {selectedDate}
+                {filterType === "consultation" 
+                  ? `Showing ${filteredPatients.length} patients with active consultations`
+                  : `Showing ${filteredPatients.length} of ${patients.length} patients by ${filterType === "lastVisit" ? "last visit" : "registration"} date: ${selectedDate}`
+                }
               </p>
             )}
           </div>
@@ -165,31 +208,36 @@ const Patients = () => {
               />
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Select value={filterType} onValueChange={(value: "lastVisit" | "createdAt") => setFilterType(value)}>
+              <Select value={filterType} onValueChange={(value: "lastVisit" | "createdAt" | "consultation" | "all") => setFilterType(value)}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Filter type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Show All Patients</SelectItem>
+                  <SelectItem value="consultation">Active Consultations</SelectItem>
                   <SelectItem value="lastVisit">Last Visit Date</SelectItem>
                   <SelectItem value="createdAt">Registration Date</SelectItem>
                 </SelectContent>
               </Select>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-                className="border rounded px-2 py-1"
-                max={new Date().toISOString().split('T')[0]}
-              />
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                className="text-xs"
-              >
-                Today
-              </Button>
+              {filterType !== "consultation" && filterType !== "all" && (
+                <>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    className="border rounded px-2 py-1"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                    className="text-xs"
+                  >
+                    Today
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
@@ -229,11 +277,18 @@ const Patients = () => {
                           Emergency
                         </Badge>
                       )}
+                      {patient.consultationStatus === 'active' && (
+                        <Badge className="ml-2 bg-blue-100 text-blue-700 border-blue-300 animate-pulse" variant="outline">
+                          In Consultation
+                        </Badge>
+                      )}
                     </CardTitle>
                     <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(patient.status)}>
-                        {patient.status}
-                      </Badge>
+                      {shouldShowBadge(patient.hasUpcomingAppointments) && (
+                        <Badge className={getStatusColor(patient.hasUpcomingAppointments)}>
+                          {getDisplayStatus(patient.hasUpcomingAppointments, patient.upcomingAppointmentCount)}
+                        </Badge>
+                      )}
                       <PatientFormDialog
                         patient={patient}
                         onSuccess={fetchPatients}
@@ -289,6 +344,12 @@ const Patients = () => {
                       </Badge>
                     )}
                   </div>
+                  {patient.consultationStatus === 'active' && patient.consultationStartTime && (
+                    <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
+                      <Clock className="h-4 w-4" />
+                      <span>Consultation started: {new Date(patient.consultationStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  )}
                   </div>
                   
                   <div className="pt-2 border-t">
@@ -308,10 +369,10 @@ const Patients = () => {
                     <Button 
                       size="sm" 
                       className="flex-1 bg-medical-500 hover:bg-medical-600"
-                      onClick={() => handleStartExam(patient.id)}
+                      onClick={() => handleStartExam(patient.id, patient.activeAppointmentId)}
                     >
                       <Stethoscope className="h-4 w-4 mr-1" />
-                      Start Exam
+                      {patient.consultationStatus === 'active' ? 'Continue Consultation' : 'Consultation'}
                     </Button>
                   </div>
 

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, User, Upload, FileText, X, File, Image, FileImage } from "lucide-react";
+import { Plus, User, Upload, FileText, X, File, Image, FileImage, AlertTriangle } from "lucide-react";
 import api from "@/lib/api";
 import { useRef } from "react";
 
@@ -196,6 +196,27 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
+    
+    // Check if user has a file selected but not added to pending reports
+    if (currentReportFile && pendingReports.length === 0) {
+      toast({
+        title: "File Not Added",
+        description: "You have a file selected but not added. Click 'Add Report' to include it, or remove the file to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Check if user has a file selected along with pending reports
+    if (currentReportFile && pendingReports.length > 0) {
+      toast({
+        title: "File Not Added",
+        description: "You have an additional file selected. Click 'Add Report' to include it, or remove the file to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
@@ -227,9 +248,12 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         response = await api.put(`/patients/${patient.id}`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
+        const fileMessage = pendingReports.length > 0 
+          ? ` ${pendingReports.length} medical report(s) uploaded.`
+          : '';
         toast({
           title: "Patient Updated",
-          description: `${formData.name} has been updated successfully.`,
+          description: `${formData.name} has been updated successfully.${fileMessage}`,
         });
       } else {
         // Create new patient with multiple file uploads
@@ -248,9 +272,12 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         response = await api.post('/patients', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
+        const fileMessage = pendingReports.length > 0 
+          ? ` ${pendingReports.length} medical report(s) uploaded.`
+          : '';
         toast({
           title: "Patient Added",
-          description: `${formData.name} has been added successfully.`,
+          description: `${formData.name} has been added successfully.${fileMessage}`,
         });
       }
       setIsLoading(false);
@@ -519,6 +546,21 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
              </div>
            )}
          </div>
+
+          {/* Warning for unaddded files */}
+          {currentReportFile && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm text-yellow-800 font-medium">
+                  File selected but not added
+                </span>
+              </div>
+              <p className="text-xs text-yellow-700 mt-1">
+                Click "Add File" to include this file, or "Cancel" to remove it before saving.
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <Button

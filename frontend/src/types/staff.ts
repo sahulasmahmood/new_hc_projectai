@@ -39,6 +39,7 @@ export interface StaffMember {
   shift?: string;
   weekOff?: string;
   consultationFee?: string;
+  digitalSignature?: string;
   documents?: string[];
   createdAt: string;
   updatedAt: string;

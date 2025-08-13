@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ConsultationStartDialog from "@/components/consultation/ConsultationStartDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X } from "lucide-react";
@@ -42,10 +44,12 @@ interface Appointment {
   status: string;
   notes?: string;
   patientVisibleId?: string;
+  consultationStartTime?: string;
 }
 
 const Appointments = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   // Fix timezone issue by creating date string manually
   const today = new Date();
   const year = today.getFullYear();
@@ -64,6 +68,8 @@ const Appointments = () => {
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<Appointment | null>(null);
+  const [consultationDialogOpen, setConsultationDialogOpen] = useState(false);
+  const [selectedAppointmentForConsultation, setSelectedAppointmentForConsultation] = useState<Appointment | null>(null);
 
   // Use appointment settings hook
   const { 
@@ -192,23 +198,14 @@ const Appointments = () => {
     }
   };
 
-  const handleStartSession = async (appointmentId: number) => {
-    try {
-      const response = await api.put(`/appointments/${appointmentId}`, { status: "In Progress" });
-      setAppointments(prev => prev.map(a => a.id === appointmentId ? response.data : a));
-      toast({
-        title: "Session Started",
-        description: "The appointment session has begun."
-      });
-      // Refresh appointments after starting session
-      fetchAppointments();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start session",
-        variant: "destructive"
-      });
-    }
+  const handleStartConsultationClick = (appointment: Appointment) => {
+    setSelectedAppointmentForConsultation(appointment);
+    setConsultationDialogOpen(true);
+  };
+
+  const handleConsultationStarted = (appointmentData: Appointment) => {
+    setAppointments(prev => prev.map(a => a.id === appointmentData.id ? appointmentData : a));
+    fetchAppointments(); // Refresh to get updated data
   };
 
   const handleReschedule = async (appointmentId: number, newDate: string, newTime: string) => {
@@ -538,21 +535,23 @@ const Appointments = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleRescheduleClick(appointment)}
-                      >
-                        Reschedule
-                      </Button>
+                      {appointment.status !== 'Consultation Started' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleRescheduleClick(appointment)}
+                        >
+                          Reschedule
+                        </Button>
+                      )}
                       {appointment.status === 'Confirmed' && (
                         <>
                           <Button 
                             size="sm" 
                             className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleStartSession(appointment.id)}
+                            onClick={() => handleStartConsultationClick(appointment)}
                           >
-                            Start Session
+                            Start Consultation
                           </Button>
                           <Button 
                             size="sm"
@@ -569,7 +568,7 @@ const Appointments = () => {
                           <Button 
                             size="sm" 
                             className="bg-red-600 hover:bg-red-700"
-                            onClick={() => handleStartSession(appointment.id)}
+                            onClick={() => handleStartConsultationClick(appointment)}
                           >
                             <AlertTriangle className="h-4 w-4 mr-1" />
                             Handle Urgent
@@ -581,6 +580,20 @@ const Appointments = () => {
                             onClick={() => handleCancelClick(appointment)}
                           >
                             <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                      {appointment.status === 'Consultation Started' && (
+                        <>
+                          <Badge className="bg-blue-100 text-blue-800">
+                            Consultation In Progress
+                          </Badge>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => navigate(`/patients?consultationId=${appointment.id}`)}
+                          >
+                            Go to Patient
                           </Button>
                         </>
                       )}
@@ -708,6 +721,19 @@ const Appointments = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      )}
+
+      {/* Consultation Start Dialog */}
+      {consultationDialogOpen && selectedAppointmentForConsultation && (
+        <ConsultationStartDialog
+          appointmentId={selectedAppointmentForConsultation.id}
+          isOpen={consultationDialogOpen}
+          onClose={() => {
+            setConsultationDialogOpen(false);
+            setSelectedAppointmentForConsultation(null);
+          }}
+          onConsultationStarted={handleConsultationStarted}
+        />
       )}
 
       {/* Time Slots */}

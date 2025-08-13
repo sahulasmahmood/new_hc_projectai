@@ -15,49 +15,64 @@ datasource db {
 }
 
 model Appointment {
-  id               Int            @id @default(autoincrement())
-  patientId        Int? // Making this optional for existing records
-  patient          Patient?       @relation(fields: [patientId], references: [id])
-  patientName      String
-  patientPhone     String
-  patientVisibleId String?
-  date             DateTime
-  time             String
-  type             String         @default("Consultation")
-  duration         String
-  status           String         @default("Confirmed")
-  notes            String?        @db.Text
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  emergencyCase    EmergencyCase?
-  emergencyCaseId  Int?
+  id                     Int            @id @default(autoincrement())
+  patientId              Int? // Making this optional for existing records
+  patient                Patient?       @relation(fields: [patientId], references: [id])
+  patientName            String
+  patientPhone           String
+  patientVisibleId       String?
+  date                   DateTime
+  time                   String
+  type                   String         @default("Consultation")
+  duration               String
+  status                 String         @default("Confirmed")
+  notes                  String?        @db.Text
+  // Official consultation times (for business logic/billing)
+  consultationStartTime  DateTime?      // Official scheduled start time
+  consultationEndTime    DateTime?      // Official scheduled end time
+  // Actual consultation times (for analysis)
+  actualStartTime        DateTime?      // When doctor actually started
+  actualEndTime          DateTime?      // When doctor actually ended
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  emergencyCase          EmergencyCase?
+  emergencyCaseId        Int?
+  prescriptions          Prescription[] // Relation to prescriptions
+  vitals                 PatientVitals[] // Relation to vitals
 
   @@index([patientId])
 }
 
 model Patient {
-  id                   Int             @id @default(autoincrement())
-  visibleId            String          @unique
-  name                 String          @db.VarChar(100)
-  age                  Int
-  gender               String          @db.VarChar(20)
-  phone                String          @db.VarChar(20)
-  email                String?         @db.VarChar(100)
-  condition            String?         @db.VarChar(200)
-  status               String          @default("Active") @db.VarChar(50)
-  allergies            String[]
-  lastVisit            DateTime?
-  abhaId               String?         @unique @db.VarChar(50)
-  abhaVerified         Boolean         @default(false)
-  emergencyContact     String?         @db.VarChar(100)
-  emergencyPhone       String?         @db.VarChar(20)
-  address              String?         @db.Text
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  appointments         Appointment[]
-  emergencyCases       EmergencyCase[]
-  createdFromEmergency Boolean         @default(false)
-  medicalReports       MedicalReport[] // New relation
+  id                     Int             @id @default(autoincrement())
+  visibleId              String          @unique
+  name                   String          @db.VarChar(100)
+  age                    Int
+  gender                 String          @db.VarChar(20)
+  phone                  String          @db.VarChar(20)
+  email                  String?         @db.VarChar(100)
+  condition              String?         @db.VarChar(200)
+  status                 String          @default("Active") @db.VarChar(50)
+  allergies              String[]
+  lastVisit              DateTime?
+  abhaId                 String?         @unique @db.VarChar(50)
+  abhaVerified           Boolean         @default(false)
+  emergencyContact       String?         @db.VarChar(100)
+  emergencyPhone         String?         @db.VarChar(20)
+  address                String?         @db.Text
+  consultationStatus     String?         @db.VarChar(20) // 'active', 'completed', null
+  // Official consultation time (for business consistency)
+  consultationStartTime  DateTime?       // Official scheduled start time
+  // Actual consultation time (for analysis)
+  actualConsultationStartTime DateTime?  // When consultation actually started
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  appointments           Appointment[]
+  emergencyCases         EmergencyCase[]
+  createdFromEmergency   Boolean         @default(false)
+  medicalReports         MedicalReport[] // New relation
+  prescriptions          Prescription[]  // Relation to prescriptions
+  vitals                 PatientVitals[] // Relation to vitals
 }
 
 model AppointmentSettings {
@@ -209,6 +224,7 @@ model Staff {
   shiftId         Int?        // Reference to Shift model
   weekOff         String?     @db.VarChar(20) // Day of the week
   consultationFee String?
+  digitalSignature String?    // Path to digital signature image or base64 encoded signature
   documents       String[]    // Array of document paths
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -245,3 +261,66 @@ model RolePermission {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+model PatientVitals {
+  id                  Int      @id @default(autoincrement())
+  patientId           Int
+  patient             Patient  @relation(fields: [patientId], references: [id])
+  appointmentId       Int?
+  appointment         Appointment? @relation(fields: [appointmentId], references: [id])
+  bloodPressureSys    Int?     // Systolic blood pressure
+  bloodPressureDia    Int?     // Diastolic blood pressure
+  heartRate           Int?     // Heart rate in bpm
+  temperature         Float?   // Temperature in Fahrenheit
+  respiratoryRate     Int?     // Respiratory rate per minute
+  oxygenSaturation    Int?     // Oxygen saturation percentage
+  weight              Float?   // Weight in lbs
+  height              Float?   // Height in inches
+  recordedBy          String?  // Who recorded the vitals (doctor/nurse)
+  notes               String?  // Additional notes
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([appointmentId])
+  @@unique([patientId, appointmentId], name: "unique_patient_appointment_vitals")
+}
+
+model Prescription {
+  id               Int                    @id @default(autoincrement())
+  patientId        Int
+  patient          Patient                @relation(fields: [patientId], references: [id])
+  appointmentId    Int?
+  appointment      Appointment?           @relation(fields: [appointmentId], references: [id])
+  // Store patient info directly for easy access
+  patientName      String?
+  patientVisibleId String?
+  patientAge       Int?
+  patientGender    String?
+  chiefComplaint   String?                @db.Text
+  investigations   String?                @db.Text
+  doctorNotes      String?                @db.Text
+  advice           String?                @db.Text
+  doctorName       String
+  doctorSignature  String?
+  medications      PrescriptionMedication[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([patientId])
+  @@index([appointmentId])
+}
+
+model PrescriptionMedication {
+  id             Int          @id @default(autoincrement())
+  prescriptionId Int
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medicineName   String
+  dosage         String
+  frequency      String
+  duration       String
+  createdAt      DateTime     @default(now())
+
+  @@index([prescriptionId])
+}
+

@@ -29,19 +29,34 @@ const getAllPatients = async (req, res) => {
       include: {
         appointments: {
           orderBy: { date: 'desc' },
-          take: 1
+          take: 5 // Get more appointments to find active consultation
         },
         medicalReports: true
       }
     });
 
-    // Format lastVisit from the most recent appointment
-    const formattedPatients = patients.map(patient => ({
-      ...patient,
-      lastVisit: patient.appointments[0]?.date || null,
-      appointments: undefined, // Remove appointments from response
-      medicalReportCount: patient.medicalReports.length
-    }));
+    // Format lastVisit from the most recent appointment and find active consultation
+    const formattedPatients = patients.map(patient => {
+      const now = new Date();
+      const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+      
+      // Check for upcoming appointments (today or future)
+      const upcomingAppointments = patient.appointments.filter(apt => {
+        const appointmentDate = new Date(apt.date);
+        return appointmentDate >= now.setHours(0, 0, 0, 0) && 
+               ['Confirmed', 'Urgent', 'Consultation Started'].includes(apt.status);
+      });
+      
+      return {
+        ...patient,
+        lastVisit: patient.appointments[0]?.date || null,
+        activeAppointmentId: activeConsultation?.id || null,
+        hasUpcomingAppointments: upcomingAppointments.length > 0,
+        upcomingAppointmentCount: upcomingAppointments.length,
+        appointments: undefined, // Remove appointments from response
+        medicalReportCount: patient.medicalReports.length
+      };
+    });
 
     res.json(formattedPatients);
   } catch (error) {
@@ -69,12 +84,27 @@ const getPatientById = async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    // Find active consultation appointment
+    const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+    
+    // Check for upcoming appointments (today or future)
+    const now = new Date();
+    const upcomingAppointments = patient.appointments.filter(apt => {
+      const appointmentDate = new Date(apt.date);
+      return appointmentDate >= now.setHours(0, 0, 0, 0) && 
+             ['Confirmed', 'Urgent', 'Consultation Started'].includes(apt.status);
+    });
+    
     // Format patient data
     const formattedPatient = {
       ...patient,
       lastVisit: patient.appointments[0]?.date || null,
-      appointments: undefined,
-      medicalReportCount: patient.medicalReports.length
+      activeAppointmentId: activeConsultation?.id || null,
+      hasUpcomingAppointments: upcomingAppointments.length > 0,
+      upcomingAppointmentCount: upcomingAppointments.length,
+      appointments: undefined, // Remove appointments from response
+      medicalReportCount: patient.medicalReports.length,
+      medicalReports: patient.medicalReports // Keep medical reports for consultation
     };
 
     res.json(formattedPatient);

@@ -102,7 +102,8 @@ const createStaff = async (req, res) => {
       status,
       shift,
       weekOff,
-      consultationFee
+      consultationFee,
+      digitalSignature
     } = req.body;
 
     // Validate required fields
@@ -168,7 +169,8 @@ const createStaff = async (req, res) => {
         status: status || 'On Duty',
         shift,
         weekOff,
-        consultationFee
+        consultationFee,
+        digitalSignature
       },
       include: {
         department: true,
@@ -202,7 +204,8 @@ const updateStaff = async (req, res) => {
       status,
       shift,
       weekOff,
-      consultationFee
+      consultationFee,
+      digitalSignature
     } = req.body;
 
     // Check if staff exists
@@ -271,7 +274,8 @@ const updateStaff = async (req, res) => {
         status,
         shift,
         weekOff,
-        consultationFee
+        consultationFee,
+        digitalSignature
       },
       include: {
         department: true,

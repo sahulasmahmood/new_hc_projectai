@@ -2,6 +2,11 @@ const { PrismaClient } = require('../../generated/prisma');
 const { inngest } = require('../../inngest/client');
 const prisma = new PrismaClient();
 const { sendWhatsAppMessage, formatAppointmentMessage } = require("../../utils/whatsapp");
+const { 
+  validateConsultationStart, 
+  getScheduledConsultationTimes,
+  formatConsultationTimes 
+} = require("../../utils/consultationTimeUtils");
 
 //old code 
 /* const { sendAppointmentConfirmationEmail, sendAppointmentCancellationEmail, sendAppointmentRescheduleEmail } = require("../../utils/appointmentMail");
@@ -225,28 +230,59 @@ const updateAppointment = async (req, res) => {
       type,
       duration,
       notes,
-      status
+      status,
+      consultationStartTime
     } = req.body;
 
     console.log('Updating appointment:', id, 'with data:', req.body);
 
+    // Prepare update data
+    const updateData = {
+      patientName,
+      patientPhone,
+      date: date ? (() => {
+        // Fix timezone issue by creating date in local timezone
+        const [year, month, day] = date.split('-').map(Number);
+        return new Date(year, month - 1, day); // month is 0-indexed
+      })() : undefined,
+      time,
+      type,
+      duration,
+      notes: notes || null,
+      status
+    };
+
+    // If starting consultation, add consultation start time
+    if (status === 'Consultation Started' && consultationStartTime) {
+      updateData.consultationStartTime = new Date(consultationStartTime);
+    }
+
     const appointment = await prisma.appointment.update({
       where: { id: parseInt(id) },
-      data: {
-        patientName,
-        patientPhone,
-        date: date ? (() => {
-          // Fix timezone issue by creating date in local timezone
-          const [year, month, day] = date.split('-').map(Number);
-          return new Date(year, month - 1, day); // month is 0-indexed
-        })() : undefined,
-        time,
-        type,
-        duration,
-        notes: notes || null,
-        status
-      }
+      data: updateData
     });
+
+    // If consultation is started, update patient consultation status
+    if (status === 'Consultation Started' && appointment.patientId) {
+      await prisma.patient.update({
+        where: { id: appointment.patientId },
+        data: {
+          consultationStatus: 'active',
+          consultationStartTime: updateData.consultationStartTime
+        }
+      });
+    }
+
+    // If consultation is completed, update patient consultation status
+    if (status === 'Completed' && appointment.patientId) {
+      await prisma.patient.update({
+        where: { id: appointment.patientId },
+        data: {
+          consultationStatus: 'completed',
+          lastVisit: new Date()
+        }
+      });
+    }
 
     // console.log('Updated appointment:', appointment);
     res.json(appointment);
@@ -523,6 +559,150 @@ const swapAppointments = async (req, res) => {
   }
 };
 
+// Validate consultation start timing
+const validateConsultationStartTiming = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: parseInt(id) }
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    // Check if appointment can be started
+    if (!['Confirmed', 'Urgent'].includes(appointment.status)) {
+      return res.status(400).json({ 
+        error: `Cannot start consultation. Appointment status is "${appointment.status}"` 
+      });
+    }
+    
+    // Get appointment date in YYYY-MM-DD format
+    const appointmentDate = appointment.date.toISOString().split('T')[0];
+    
+    // Validate timing
+    const validation = validateConsultationStart(
+      appointmentDate,
+      appointment.time,
+      appointment.duration
+    );
+    
+    // Add appointment details to response
+    const { scheduledStart, scheduledEnd } = getScheduledConsultationTimes(
+      appointmentDate,
+      appointment.time,
+      appointment.duration
+    );
+    
+    const timeDisplay = formatConsultationTimes(scheduledStart, scheduledEnd);
+    
+    res.json({
+      ...validation,
+      appointment: {
+        id: appointment.id,
+        patientName: appointment.patientName,
+        officialSlot: timeDisplay.officialSlot,
+        scheduledDuration: timeDisplay.duration
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error validating consultation start:', error);
+    res.status(500).json({ error: 'Failed to validate consultation timing' });
+  }
+};
+
+// Start consultation with proper time handling
+const startConsultation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { forceStart = false } = req.body;
+    
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: parseInt(id) }
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    // Get appointment date in YYYY-MM-DD format
+    const appointmentDate = appointment.date.toISOString().split('T')[0];
+    
+    // Validate timing unless force start is requested
+    if (!forceStart) {
+      const validation = validateConsultationStart(
+        appointmentDate,
+        appointment.time,
+        appointment.duration
+      );
+      
+      if (!validation.canStart) {
+        return res.status(400).json({
+          error: validation.message,
+          messageType: validation.messageType
+        });
+      }
+    }
+    
+    // Get scheduled times for official record
+    const { scheduledStart, scheduledEnd } = getScheduledConsultationTimes(
+      appointmentDate,
+      appointment.time,
+      appointment.duration
+    );
+    
+    const actualStartTime = new Date();
+    
+    // Update appointment with both official and actual times
+    const updatedAppointment = await prisma.appointment.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: 'Consultation Started',
+        consultationStartTime: scheduledStart,    // Official start time
+        consultationEndTime: scheduledEnd,        // Official end time
+        actualStartTime: actualStartTime          // Actual start time
+      }
+    });
+    
+    // Update patient consultation status
+    if (appointment.patientId) {
+      await prisma.patient.update({
+        where: { id: appointment.patientId },
+        data: {
+          consultationStatus: 'active',
+          consultationStartTime: scheduledStart,           // Official start time
+          actualConsultationStartTime: actualStartTime     // Actual start time
+        }
+      });
+    }
+    
+    // Format response with time information
+    const timeDisplay = formatConsultationTimes(
+      scheduledStart, 
+      scheduledEnd, 
+      actualStartTime
+    );
+    
+    res.json({
+      appointment: updatedAppointment,
+      timeInfo: {
+        officialSlot: timeDisplay.officialSlot,
+        actualStartTime: timeDisplay.actualStart,
+        message: forceStart ? 
+          'Consultation started (forced)' : 
+          'Consultation started successfully'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error starting consultation:', error);
+    res.status(500).json({ error: 'Failed to start consultation' });
+  }
+};
+
 module.exports = {
   getAllAppointments,
   getAppointment,
@@ -530,5 +710,7 @@ module.exports = {
   updateAppointment,
   deleteAppointment,
   rescheduleAppointment,
-  swapAppointments
+  swapAppointments,
+  validateConsultationStartTiming,
+  startConsultation
 };

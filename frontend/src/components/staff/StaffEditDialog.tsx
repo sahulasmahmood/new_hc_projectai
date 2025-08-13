@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import SignaturePad from "@/components/ui/signature-pad";
 import api from "@/lib/api";
 
 interface StaffEditDialogProps {
@@ -590,6 +591,43 @@ const StaffEditDialog = ({
                   />
                 </div>
               </div>
+
+              {/* Digital Signature Section - Only for Doctors */}
+              {(formData.role?.toLowerCase().includes('doctor') || 
+                formData.role?.toLowerCase().includes('physician') || 
+                formData.role?.toLowerCase().includes('md')) && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">
+                    Digital Signature for Prescriptions
+                  </h4>
+                  <div className="space-y-4">
+                    <p className="text-xs text-gray-600">
+                      Draw your signature below. This will appear on all prescriptions you create.
+                      For security and legal compliance, ensure your signature is clear and professional.
+                    </p>
+                    
+                    <div className="flex justify-center">
+                      <SignaturePad
+                        value={formData.digitalSignature}
+                        onChange={(signature) => handleChange("digitalSignature", signature)}
+                        width={350}
+                        height={150}
+                      />
+                    </div>
+                    
+                    {formData.digitalSignature && (
+                      <div className="text-center">
+                        <div className="text-xs text-green-600 mb-2">
+                          ✓ Digital signature saved
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          This signature will be used on all prescriptions
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
