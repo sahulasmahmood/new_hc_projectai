@@ -48,6 +48,33 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
   const [investigations, setInvestigations] = useState("");
   const [doctorNotes, setDoctorNotes] = useState("");
   const [advice, setAdvice] = useState("");
+  
+  // Simple data loss prevention
+  const hasFormData = () => {
+    return chiefComplaint.trim() || investigations.trim() || doctorNotes.trim() || advice.trim() || medications.length > 0;
+  };
+
+  // Prevent accidental navigation
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasFormData()) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved prescription data. Are you sure you want to leave?';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [chiefComplaint, investigations, doctorNotes, advice, medications]);
+
+  // Track unsaved changes for sidebar navigation
+  useEffect(() => {
+    if (hasFormData()) {
+      localStorage.setItem('prescription_unsaved', 'true');
+    } else {
+      localStorage.removeItem('prescription_unsaved');
+    }
+  }, [chiefComplaint, investigations, doctorNotes, advice, medications]);
   const [hospitalInfo, setHospitalInfo] = useState<{
     name?: string;
     phone?: string;
@@ -212,6 +239,8 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
       setInvestigations("");
       setDoctorNotes("");
       setAdvice("");
+      setSelectedDoctorId("");
+      localStorage.removeItem('prescription_unsaved');
     } catch (error) {
       console.error('Error saving prescription:', error);
       toast({
@@ -224,6 +253,13 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
 
   return (
     <div className="max-w-4xl mx-auto">
+      {hasFormData() && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="text-sm text-amber-800">
+            ⚠️ <strong>Prescription in progress</strong> - Avoid navigating away to prevent data loss
+          </div>
+        </div>
+      )}
       <Card className="border-2 border-gray-300">
         <CardContent className="p-8">
         {/* Hospital Header */}

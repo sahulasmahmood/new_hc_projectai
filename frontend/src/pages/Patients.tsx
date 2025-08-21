@@ -385,28 +385,26 @@ const Patients = () => {
                         </Button>
                       }
                     />
+                    <MedicalRecordsDialog
+                      patient={patient}
+                      trigger={
+                        <Button variant="outline" size="sm" className="flex-1 text-xs">
+                          View Records
+                        </Button>
+                      }
+                    />
                     {/* ABHA Actions */}
                     {patient.abhaId && (
-                      <>
-                        <ABHAModal
-                          trigger={
-                            <Button variant="outline" size="sm" className="flex-1 text-xs">
-                              <Shield className="h-3 w-3 mr-1" />
-                              Manage ABHA
-                            </Button>
-                          }
-                          patientId={patient.id}
-                          existingABHA={patient.abhaId}
-                        />
-                        <MedicalRecordsDialog
-                          patient={patient}
-                          trigger={
-                            <Button variant="outline" size="sm" className="flex-1 text-xs">
-                              View Records
-                            </Button>
-                          }
-                        />
-                      </>
+                      <ABHAModal
+                        trigger={
+                          <Button variant="outline" size="sm" className="flex-1 text-xs">
+                            <Shield className="h-3 w-3 mr-1" />
+                            Manage ABHA
+                          </Button>
+                        }
+                        patientId={patient.id}
+                        existingABHA={patient.abhaId}
+                      />
                     )}
                   </div>
                 </CardContent>

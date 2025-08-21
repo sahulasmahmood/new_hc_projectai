@@ -88,8 +88,24 @@ const Sidebar = () => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           
+          const handleNavClick = (e: React.MouseEvent) => {
+            // Check if there's unsaved prescription data
+            const hasUnsavedData = localStorage.getItem('prescription_unsaved') === 'true';
+            
+            if (hasUnsavedData && !isActive) {
+              e.preventDefault();
+              const confirmed = window.confirm(
+                'You have unsaved prescription data. Are you sure you want to leave? Your work will be lost.'
+              );
+              if (confirmed) {
+                localStorage.removeItem('prescription_unsaved');
+                navigate(item.path);
+              }
+            }
+          };
+          
           return (
-            <Link key={item.path} to={item.path}>
+            <Link key={item.path} to={item.path} onClick={handleNavClick}>
               <Button
                 variant={isActive ? "default" : "ghost"}
                 className={`w-full justify-start ${isCollapsed ? 'px-2' : 'px-4'} ${

@@ -124,6 +124,14 @@ const getPatientPrescriptions = async (req, res) => {
       where: { patientId: parseInt(patientId) },
       include: {
         medications: true,
+        patient: {
+          select: {
+            name: true,
+            visibleId: true,
+            age: true,
+            gender: true,
+          },
+        },
         appointment: {
           select: {
             date: true,
