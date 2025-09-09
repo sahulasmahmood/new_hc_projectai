@@ -11,6 +11,7 @@ const staffRouter = require('./staff');
 const prescriptionsRouter = require('./prescriptions');
 const vitalsRouter = require('./vitals');
 const medicinesRouter = require('./medicines');
+const reportsRouter = require('./reports');
 /* const categoriesRouter = require('./categories');
 const suppliersRouter = require('./suppliers'); */
 
@@ -26,6 +27,7 @@ router.use('/staff', staffRouter);
 router.use('/prescriptions', prescriptionsRouter);
 router.use('/vitals', vitalsRouter);
 router.use('/medicines', medicinesRouter);
+router.use('/reports', reportsRouter);
 /* router.use('/settings/categories', categoriesRouter);
 router.use('/settings/suppliers', suppliersRouter); */
 
