@@ -12,6 +12,7 @@ const prescriptionsRouter = require('./prescriptions');
 const vitalsRouter = require('./vitals');
 const medicinesRouter = require('./medicines');
 const reportsRouter = require('./reports');
+const billingRouter = require("./billing")
 /* const categoriesRouter = require('./categories');
 const suppliersRouter = require('./suppliers'); */
 
@@ -28,6 +29,7 @@ router.use('/prescriptions', prescriptionsRouter);
 router.use('/vitals', vitalsRouter);
 router.use('/medicines', medicinesRouter);
 router.use('/reports', reportsRouter);
+router.use("/billing", billingRouter)
 /* router.use('/settings/categories', categoriesRouter);
 router.use('/settings/suppliers', suppliersRouter); */
 

@@ -48,6 +48,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
   const [investigations, setInvestigations] = useState("");
   const [doctorNotes, setDoctorNotes] = useState("");
   const [advice, setAdvice] = useState("");
+  const [saving, setSaving] = useState(false);
   
   // Simple data loss prevention
   const hasFormData = () => {
@@ -197,6 +198,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
       return;
     }
 
+    setSaving(true);
     try {
       const selectedDoctor = doctors.find(d => d.id.toString() === selectedDoctorId);
       
@@ -224,7 +226,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
       const response = await api.post('/prescriptions', prescriptionData);
 
       if (onSave) {
-        onSave(response.data);
+        onSave(response.data.prescription); // <-- Fix: pass only the prescription object
       }
 
       toast({
@@ -248,6 +250,8 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
         description: "Failed to save prescription. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -596,9 +600,9 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
             onClick={handleSave}
             className={`px-8 py-2 ${selectedDoctorId ? 'bg-medical-500 hover:bg-medical-600' : 'bg-gray-400 cursor-not-allowed'}`}
             size="lg"
-            disabled={!selectedDoctorId || doctors.length === 0}
+            disabled={!selectedDoctorId || doctors.length === 0 || saving}
           >
-            {!selectedDoctorId ? '⚠️ Select Doctor First' : 'Save Prescription'}
+            {!selectedDoctorId ? '⚠️ Select Doctor First' : saving ? 'Saving...' : 'Save Prescription'}
           </Button>
         </div>
       </CardContent>
