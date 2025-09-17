@@ -77,6 +77,7 @@ router.put('/staff-settings/shifts', updateShift);
 router.delete('/staff-settings/shifts', deleteShiftNew);
 
 router.get('/hospital-settings', getHospitalSettings);
+router.get('/hospital', getHospitalSettings); // Add alias for invoice feature
 router.post('/hospital-settings', saveHospitalSettings);
 
 

@@ -9,9 +9,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
-import { CreditCard, Plus, Search, Filter, IndianRupee, Eye, Receipt, Calendar, User, Trash2 } from "lucide-react"
+
+import { CreditCard, Plus, Search, Filter, IndianRupee, Eye, Receipt, Calendar, User, Trash2, Settings, ChevronLeft, ChevronRight, Edit, FileText } from "lucide-react"
 import api from "@/lib/api"
+import GstSelector from "@/components/gst/GstSelector"
+import InvoiceViewModal from "@/components/invoice/InvoiceViewModal"
+import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal"
+import { useToast } from "@/hooks/use-toast"
+
+interface GstRate {
+  id: number
+  name: string
+  rate: number
+  description?: string
+  category?: string
+  isActive: boolean
+}
 
 interface BillItem {
   id: number
@@ -21,7 +34,11 @@ interface BillItem {
   quantity: number
   unitPrice: number
   totalPrice: number
-  gstApplicable: boolean
+  gstAmount: number
+  gstRate?: {
+    name: string
+    rate: number
+  }
 }
 
 interface Bill {
@@ -34,10 +51,11 @@ interface Bill {
   status: string
   paymentMethod?: string
   paymentDate?: string
-  gstEnabled: boolean
-  gstRate: number
   createdAt: string
-  items: BillItem[]
+  items?: BillItem[]
+  _count?: {
+    items: number
+  }
   patient: {
     name: string
     visibleId: string
@@ -81,10 +99,25 @@ const Billing = () => {
   const [isViewBillOpen, setIsViewBillOpen] = useState(false)
   const [isAddItemOpen, setIsAddItemOpen] = useState(false)
   const [isAddConsultationOpen, setIsAddConsultationOpen] = useState(false)
+  const [isGstManagementOpen, setIsGstManagementOpen] = useState(false)
+  const [isInvoiceViewOpen, setIsInvoiceViewOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [availableMedicines, setAvailableMedicines] = useState([])
   const [medicineSearch, setMedicineSearch] = useState("")
   const [consultationFee, setConsultationFee] = useState(0)
+  const [gstRates, setGstRates] = useState<GstRate[]>([])
+  const [selectedGst, setSelectedGst] = useState<GstRate | null>(null)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Cash")
+  const { toast } = useToast()
+
+  // Pagination and filtering
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: ""
+  })
+  const itemsPerPage = 10
 
   // Add item form state
   const [itemForm, setItemForm] = useState({
@@ -96,10 +129,20 @@ const Billing = () => {
     inventoryItemId: null,
   })
 
+  // GST management form state
+  const [gstForm, setGstForm] = useState({
+    name: "",
+    rate: "",
+    description: "",
+    category: ""
+  })
+  const [editingGst, setEditingGst] = useState<GstRate | null>(null)
+
   useEffect(() => {
     fetchBills()
     fetchAnalytics()
-  }, [selectedStatus, searchQuery])
+    fetchGstRates()
+  }, [selectedStatus, searchQuery, currentPage, dateRange])
 
   const fetchBills = async () => {
     try {
@@ -107,9 +150,20 @@ const Billing = () => {
       const params = new URLSearchParams()
       if (selectedStatus !== "all") params.append("status", selectedStatus)
       if (searchQuery) params.append("search", searchQuery)
+      if (dateRange.startDate) params.append("startDate", dateRange.startDate)
+      if (dateRange.endDate) params.append("endDate", dateRange.endDate)
+      
+      // Pagination
+      params.append("limit", itemsPerPage.toString())
+      params.append("offset", ((currentPage - 1) * itemsPerPage).toString())
 
       const response = await api.get(`/billing?${params.toString()}`)
-      setBills(response.data)
+      setBills(response.data.bills || response.data)
+      
+      // Calculate total pages if backend provides total count
+      if (response.data.total) {
+        setTotalPages(Math.ceil(response.data.total / itemsPerPage))
+      }
     } catch (error) {
       console.error("Error fetching bills:", error)
     } finally {
@@ -158,6 +212,87 @@ const Billing = () => {
     }
   }
 
+  const fetchGstRates = async () => {
+    try {
+      const response = await api.get("/gst")
+      setGstRates(response.data)
+    } catch (error) {
+      console.error("Error fetching GST rates:", error)
+    }
+  }
+
+  const createGstRate = async () => {
+    try {
+      await api.post("/gst", {
+        name: gstForm.name,
+        rate: parseFloat(gstForm.rate),
+        description: gstForm.description || null,
+        category: gstForm.category === "none" ? null : gstForm.category || null
+      })
+      fetchGstRates()
+      resetGstForm()
+    } catch (error) {
+      console.error("Error creating GST rate:", error)
+    }
+  }
+
+  const updateGstRate = async () => {
+    if (!editingGst) return
+    try {
+      await api.put(`/gst/${editingGst.id}`, {
+        name: gstForm.name,
+        rate: parseFloat(gstForm.rate),
+        description: gstForm.description || null,
+        category: gstForm.category === "none" ? null : gstForm.category || null
+      })
+      fetchGstRates()
+      resetGstForm()
+    } catch (error) {
+      console.error("Error updating GST rate:", error)
+    }
+  }
+
+  const deleteGstRate = async (id: number) => {
+    await api.delete(`/gst/${id}`)
+    fetchGstRates()
+    toast({
+      title: "Success",
+      description: "GST rate deleted successfully",
+    })
+  }
+
+  const cancelBill = async (billId: number) => {
+    await updatePaymentStatus(billId, "Cancelled")
+    toast({
+      title: "Success",
+      description: "Bill cancelled successfully",
+    })
+  }
+
+  const toggleGstStatus = async (id: number) => {
+    try {
+      await api.patch(`/gst/${id}/toggle-status`)
+      fetchGstRates()
+    } catch (error) {
+      console.error("Error toggling GST status:", error)
+    }
+  }
+
+  const resetGstForm = () => {
+    setGstForm({ name: "", rate: "", description: "", category: "none" })
+    setEditingGst(null)
+  }
+
+  const editGst = (gst: GstRate) => {
+    setEditingGst(gst)
+    setGstForm({
+      name: gst.name,
+      rate: gst.rate.toString(),
+      description: gst.description || "",
+      category: gst.category || "none"
+    })
+  }
+
   const updatePaymentStatus = async (billId: number, status: string, paymentMethod?: string) => {
     try {
       await api.put(`/billing/${billId}/payment`, { status, paymentMethod })
@@ -171,17 +306,7 @@ const Billing = () => {
     }
   }
 
-  const toggleGST = async (billId: number, gstEnabled: boolean) => {
-    try {
-      await api.put(`/billing/${billId}/gst`, { gstEnabled })
-      fetchBills()
-      if (selectedBill && selectedBill.id === billId) {
-        fetchBillDetails(billId)
-      }
-    } catch (error) {
-      console.error("Error toggling GST:", error)
-    }
-  }
+
 
   const addItemToBill = async () => {
     if (!selectedBill) return
@@ -193,7 +318,7 @@ const Billing = () => {
         quantity: itemForm.quantity,
         unitPrice: itemForm.unitPrice,
         description: itemForm.description,
-        gstApplicable: itemForm.type === "medicine",
+        gstRateId: selectedGst?.id || null,
         ...(itemForm.inventoryItemId && { inventoryItemId: itemForm.inventoryItemId }),
       }
 
@@ -202,6 +327,7 @@ const Billing = () => {
       fetchBills()
       setIsAddItemOpen(false)
       setItemForm({ type: "medicine", name: "", quantity: 1, unitPrice: 0, description: "", inventoryItemId: null })
+      setSelectedGst(null)
     } catch (error) {
       console.error("Error adding item:", error)
     }
@@ -286,14 +412,7 @@ const Billing = () => {
     }
   }
 
-  const filteredBills = bills.filter((bill) => {
-    const matchesStatus = selectedStatus === "all" || bill.status === selectedStatus
-    const matchesSearch =
-      bill.patient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      bill.billNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      bill.patient.visibleId.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesStatus && matchesSearch
-  })
+
 
   return (
     <div className="p-6 space-y-6">
@@ -302,6 +421,14 @@ const Billing = () => {
           <CreditCard className="h-8 w-8 text-medical-500" />
           <h1 className="text-3xl font-bold text-gray-900">Billing Management</h1>
         </div>
+        <Button
+          onClick={() => setIsGstManagementOpen(true)}
+          variant="outline"
+          className="flex items-center gap-2"
+        >
+          <Settings className="h-4 w-4" />
+          Manage GST Rates
+        </Button>
       </div>
 
       {/* Summary Cards */}
@@ -335,29 +462,65 @@ const Billing = () => {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Search by patient name, bill number, or patient ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Search by patient name, bill number, or patient ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="Paid">Paid</SelectItem>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="Overdue">Overdue</SelectItem>
+                    <SelectItem value="Cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-500" />
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="Paid">Paid</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Overdue">Overdue</SelectItem>
-                </SelectContent>
-              </Select>
+            
+            {/* Date Range Filter */}
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <Label className="text-sm font-medium">Date Range:</Label>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={dateRange.startDate}
+                  onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                  className="w-40"
+                />
+                <span className="text-gray-500 self-center">to</span>
+                <Input
+                  type="date"
+                  value={dateRange.endDate}
+                  onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                  className="w-40"
+                />
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDateRange({ startDate: "", endDate: "" })
+                  setCurrentPage(1)
+                }}
+                className="text-sm"
+              >
+                Clear Dates
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -371,7 +534,7 @@ const Billing = () => {
               <div className="text-gray-600">Loading bills...</div>
             </CardContent>
           </Card>
-        ) : filteredBills.length === 0 ? (
+        ) : bills.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
               <CreditCard className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -380,7 +543,7 @@ const Billing = () => {
             </CardContent>
           </Card>
         ) : (
-          filteredBills.map((bill) => (
+          bills.map((bill) => (
             <Card key={bill.id} className="hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -418,7 +581,7 @@ const Billing = () => {
 
                   <div>
                     <div className="text-sm text-gray-600 mb-1">Items</div>
-                    <div className="font-medium">{bill.items?.length || 0} items</div>
+                    <div className="font-medium">{bill._count?.items || 0} items</div>
                   </div>
 
                   <div>
@@ -428,7 +591,7 @@ const Billing = () => {
                     ) : (
                       <div className="font-medium text-yellow-600">Payment Pending</div>
                     )}
-                    {bill.gstEnabled && (
+                    {bill.gstAmount > 0 && (
                       <div className="text-sm text-gray-600">GST: ₹{bill.gstAmount.toLocaleString()}</div>
                     )}
                   </div>
@@ -443,27 +606,90 @@ const Billing = () => {
                       setIsViewBillOpen(true)
                     }}
                   >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View Details
+                    {(bill.status === "Paid" || bill.status === "Cancelled") ? (
+                      <>
+                        <Eye className="h-4 w-4 mr-1" />
+                        View Details
+                      </>
+                    ) : (
+                      <>
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit Details
+                      </>
+                    )}
                   </Button>
-                  {bill.status === "Pending" && (
-                    <>
-                      <Button
-                        size="sm"
-                        className="bg-medical-500 hover:bg-medical-600"
-                        onClick={() => updatePaymentStatus(bill.id, "Paid", "Cash")}
-                      >
-                        <IndianRupee className="h-4 w-4 mr-1" />
-                        Mark Paid
-                      </Button>
-                    </>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      fetchBillDetails(bill.id)
+                      setIsInvoiceViewOpen(true)
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Invoice
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {bills.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                
+                {/* Page numbers */}
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                    if (pageNum > totalPages) return null
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-8 h-8 p-0"
+                      >
+                        {pageNum}
+                      </Button>
+                    )
+                  })}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bill Details Dialog */}
       <Dialog open={isViewBillOpen} onOpenChange={setIsViewBillOpen}>
@@ -494,17 +720,7 @@ const Billing = () => {
                 </div>
               </div>
 
-              {/* GST Toggle */}
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div>
-                  <Label className="text-sm font-medium">GST Application</Label>
-                  <div className="text-sm text-gray-600">Apply GST to medicines only</div>
-                </div>
-                <Switch
-                  checked={selectedBill.gstEnabled}
-                  onCheckedChange={(checked) => toggleGST(selectedBill.id, checked)}
-                />
-              </div>
+
 
               {/* Prescribed Medicines */}
               {selectedBill.prescription?.medications && selectedBill.prescription.medications.length > 0 && (
@@ -526,7 +742,7 @@ const Billing = () => {
                             selectPrescribedMedicine(medication)
                             setIsAddItemOpen(true)
                           }}
-                          disabled={selectedBill.status === "Paid"}
+                          disabled={selectedBill.status === "Paid" || selectedBill.status === "Cancelled"}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -545,7 +761,7 @@ const Billing = () => {
                       size="sm" 
                       variant="outline"
                       onClick={() => setIsAddConsultationOpen(true)} 
-                      disabled={selectedBill.status === "Paid"}
+                      disabled={selectedBill.status === "Paid" || selectedBill.status === "Cancelled"}
                     >
                       <Plus className="h-4 w-4 mr-1" />
                       Add Consultation
@@ -556,7 +772,7 @@ const Billing = () => {
                         fetchAvailableMedicines()
                         setIsAddItemOpen(true)
                       }} 
-                      disabled={selectedBill.status === "Paid"}
+                      disabled={selectedBill.status === "Paid" || selectedBill.status === "Cancelled"}
                     >
                       <Plus className="h-4 w-4 mr-1" />
                       Add Item
@@ -571,14 +787,17 @@ const Billing = () => {
                         <div className="font-medium">{item.itemName}</div>
                         <div className="text-sm text-gray-600">
                           {item.quantity} × ₹{item.unitPrice} = ₹{item.totalPrice}
-                          {item.gstApplicable && selectedBill.gstEnabled && (
+                          {item.gstAmount > 0 && (
                             <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              GST Applied
+                              GST: ₹{item.gstAmount.toFixed(2)} ({item.gstRate?.rate}%)
                             </span>
                           )}
                         </div>
+                        {item.description && (
+                          <div className="text-xs text-gray-500 mt-1">{item.description}</div>
+                        )}
                       </div>
-                      {selectedBill.status !== "Paid" && (
+                      {selectedBill.status !== "Paid" && selectedBill.status !== "Cancelled" && (
                         <Button variant="outline" size="sm" onClick={() => deleteItem(item.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -594,9 +813,9 @@ const Billing = () => {
                   <span>Subtotal:</span>
                   <span>₹{selectedBill.subtotal.toLocaleString()}</span>
                 </div>
-                {selectedBill.gstEnabled && (
+                {selectedBill.gstAmount > 0 && (
                   <div className="flex justify-between">
-                    <span>GST ({selectedBill.gstRate}%):</span>
+                    <span>Total GST:</span>
                     <span>₹{selectedBill.gstAmount.toLocaleString()}</span>
                   </div>
                 )}
@@ -606,21 +825,105 @@ const Billing = () => {
                 </div>
               </div>
 
+              {/* Invoice Actions */}
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsViewBillOpen(false)
+                    setIsInvoiceViewOpen(true)
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  View Invoice
+                </Button>
+              </div>
+
               {/* Payment Actions */}
-              {selectedBill.status === "Pending" && (
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => updatePaymentStatus(selectedBill.id, "Paid", "Cash")}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    Mark as Paid (Cash)
-                  </Button>
-                  <Button
-                    onClick={() => updatePaymentStatus(selectedBill.id, "Paid", "UPI")}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Mark as Paid (UPI)
-                  </Button>
+              {(selectedBill.status === "Pending" || selectedBill.status === "Overdue") && (
+                <div className="space-y-4">
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1">
+                      <Label className="text-sm font-medium mb-2 block">Payment Method</Label>
+                      <Select value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cash">Cash</SelectItem>
+                          <SelectItem value="UPI">UPI</SelectItem>
+                          <SelectItem value="Card">Card</SelectItem>
+                          <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="Cheque">Cheque</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="h-6"></div> {/* Spacer to align with dropdown */}
+                      <Button
+                        onClick={() => updatePaymentStatus(selectedBill.id, "Paid", selectedPaymentMethod)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <IndianRupee className="h-4 w-4 mr-1" />
+                        Mark as Paid
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Additional Actions - Only show for Pending bills */}
+                  {selectedBill.status === "Pending" && (
+                    <div className="flex gap-2 pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        onClick={() => updatePaymentStatus(selectedBill.id, "Overdue")}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        Mark as Overdue
+                      </Button>
+                      <DeleteConfirmModal
+                        title="Cancel Bill"
+                        itemName="Bill"
+                        description={`Bill #${selectedBill.billNumber} will be cancelled and cannot be recovered. This action cannot be undone.`}
+                        onConfirm={() => cancelBill(selectedBill.id)}
+                        icon="warning"
+                        confirmText="Cancel"
+                        confirmVariant="destructive"
+                        trigger={
+                          <Button
+                            variant="outline"
+                            className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                          >
+                            Cancel Bill
+                          </Button>
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Show status for non-pending bills */}
+              {selectedBill.status !== "Pending" && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Bill Status:</span>
+                    <Badge className={getStatusColor(selectedBill.status)}>{selectedBill.status}</Badge>
+                  </div>
+                  {selectedBill.paymentMethod && (
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm text-gray-600">Payment Method:</span>
+                      <span className="text-sm font-medium">{selectedBill.paymentMethod}</span>
+                    </div>
+                  )}
+                  {selectedBill.paymentDate && (
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm text-gray-600">Payment Date:</span>
+                      <span className="text-sm font-medium">
+                        {new Date(selectedBill.paymentDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -668,12 +971,12 @@ const Billing = () => {
 
       {/* Add Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Item to Bill</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
             <div>
               <Label>Item Type</Label>
               <Select value={itemForm.type} onValueChange={(value) => setItemForm({ ...itemForm, type: value })}>
@@ -698,7 +1001,7 @@ const Billing = () => {
                   }}
                   placeholder="Search medicines in inventory..."
                 />
-                {availableMedicines.length > 0 && (
+                {medicineSearch && availableMedicines.length > 0 && (
                   <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg">
                     {availableMedicines.map((medicine: any) => (
                       <div 
@@ -749,6 +1052,16 @@ const Billing = () => {
             </div>
 
             <div>
+              <Label>GST Rate (Optional)</Label>
+              <GstSelector
+                selectedGstId={selectedGst?.id}
+                onGstChange={setSelectedGst}
+                category={itemForm.type}
+                placeholder="Select GST rate (optional)"
+              />
+            </div>
+
+            <div>
               <Label>Description (Optional)</Label>
               <Textarea
                 value={itemForm.description}
@@ -756,6 +1069,28 @@ const Billing = () => {
                 placeholder="Additional details about the item"
               />
             </div>
+
+            {/* Price Calculation Preview */}
+            {itemForm.quantity > 0 && itemForm.unitPrice > 0 && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>₹{(itemForm.quantity * itemForm.unitPrice).toFixed(2)}</span>
+                  </div>
+                  {selectedGst && (
+                    <div className="flex justify-between text-blue-600">
+                      <span>GST ({selectedGst.rate}%):</span>
+                      <span>₹{((itemForm.quantity * itemForm.unitPrice * selectedGst.rate) / 100).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold border-t pt-1">
+                    <span>Total:</span>
+                    <span>₹{(itemForm.quantity * itemForm.unitPrice + (selectedGst ? (itemForm.quantity * itemForm.unitPrice * selectedGst.rate) / 100 : 0)).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Button onClick={() => setIsAddItemOpen(false)} variant="outline">
@@ -768,6 +1103,143 @@ const Billing = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* GST Management Dialog */}
+      <Dialog open={isGstManagementOpen} onOpenChange={setIsGstManagementOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>GST Rate Management</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Add/Edit GST Form */}
+            <div className="p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-medium mb-4">{editingGst ? "Edit GST Rate" : "Add New GST Rate"}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Name *</Label>
+                  <Input
+                    value={gstForm.name}
+                    onChange={(e) => setGstForm({ ...gstForm, name: e.target.value })}
+                    placeholder="e.g., Medicine GST (5%)"
+                  />
+                </div>
+                <div>
+                  <Label>Rate (%) *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={gstForm.rate}
+                    onChange={(e) => setGstForm({ ...gstForm, rate: e.target.value })}
+                    placeholder="e.g., 18"
+                  />
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <Select value={gstForm.category} onValueChange={(value) => setGstForm({ ...gstForm, category: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No category</SelectItem>
+                      <SelectItem value="medicine">Medicine</SelectItem>
+                      <SelectItem value="cosmetic">Cosmetic</SelectItem>
+                      <SelectItem value="lab">Lab Test</SelectItem>
+                      <SelectItem value="service">Service</SelectItem>
+                      <SelectItem value="equipment">Equipment</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Input
+                    value={gstForm.description}
+                    onChange={(e) => setGstForm({ ...gstForm, description: e.target.value })}
+                    placeholder="Optional description"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  onClick={editingGst ? updateGstRate : createGstRate}
+                  disabled={!gstForm.name || !gstForm.rate}
+                  className="bg-medical-500 hover:bg-medical-600"
+                >
+                  {editingGst ? "Update" : "Create"} GST Rate
+                </Button>
+                {editingGst && (
+                  <Button onClick={resetGstForm} variant="outline">
+                    Cancel Edit
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* GST Rates List */}
+            <div>
+              <h3 className="font-medium mb-4">Existing GST Rates</h3>
+              <div className="space-y-2">
+                {gstRates.map((gst) => (
+                  <div key={gst.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <div className="font-medium">{gst.name}</div>
+                      <div className="text-sm text-gray-600">
+                        Rate: {gst.rate}%
+                        {gst.category && ` • Category: ${gst.category}`}
+                        {gst.description && ` • ${gst.description}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={gst.isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                        {gst.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => editGst(gst)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => toggleGstStatus(gst.id)}
+                      >
+                        {gst.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                      <DeleteConfirmModal
+                        title="Delete GST Rate"
+                        itemName="GST Rate"
+                        description={`"${gst.name}" (${gst.rate}%) will be permanently removed. This action cannot be undone.`}
+                        onConfirm={() => deleteGstRate(gst.id)}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice View Modal */}
+      <InvoiceViewModal
+        isOpen={isInvoiceViewOpen}
+        onClose={() => setIsInvoiceViewOpen(false)}
+        bill={selectedBill}
+      />
     </div>
   )
 }

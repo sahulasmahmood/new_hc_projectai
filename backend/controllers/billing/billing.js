@@ -70,7 +70,6 @@ const createBillFromPrescription = async (req, res) => {
         gstAmount: 0,
         totalAmount: 0,
         status: "Pending",
-        gstEnabled: false,
       },
       include: {
         items: true,
@@ -116,7 +115,7 @@ const createBillFromPrescription = async (req, res) => {
 const addMedicineItem = async (req, res) => {
   try {
     const { billId } = req.params
-    const { medicineName, quantity, unitPrice, inventoryItemId, gstApplicable = true } = req.body
+    const { medicineName, quantity, unitPrice, inventoryItemId, gstRateId } = req.body
 
     if (!medicineName || !quantity || !unitPrice) {
       return res.status(400).json({ error: "Medicine name, quantity, and unit price are required" })
@@ -136,6 +135,17 @@ const addMedicineItem = async (req, res) => {
     }
 
     const totalPrice = Number.parseFloat(quantity) * Number.parseFloat(unitPrice)
+    let gstAmount = 0
+
+    // Calculate GST amount if GST rate is selected
+    if (gstRateId) {
+      const gstRate = await prisma.gstRate.findUnique({
+        where: { id: Number.parseInt(gstRateId) }
+      })
+      if (gstRate && gstRate.isActive) {
+        gstAmount = (totalPrice * gstRate.rate) / 100
+      }
+    }
 
     // Add medicine item
     const billItem = await prisma.billItem.create({
@@ -148,7 +158,8 @@ const addMedicineItem = async (req, res) => {
         unitPrice: Number.parseFloat(unitPrice),
         totalPrice,
         inventoryItemId: inventoryItemId ? Number.parseInt(inventoryItemId) : null,
-        gstApplicable: Boolean(gstApplicable),
+        gstRateId: gstRateId ? Number.parseInt(gstRateId) : null,
+        gstAmount,
       },
     })
 
@@ -166,7 +177,7 @@ const addMedicineItem = async (req, res) => {
 const addServiceItem = async (req, res) => {
   try {
     const { billId } = req.params
-    const { serviceName, quantity = 1, unitPrice, description } = req.body
+    const { serviceName, quantity = 1, unitPrice, description, gstRateId } = req.body
 
     if (!serviceName || !unitPrice) {
       return res.status(400).json({ error: "Service name and unit price are required" })
@@ -185,6 +196,17 @@ const addServiceItem = async (req, res) => {
     }
 
     const totalPrice = Number.parseFloat(quantity) * Number.parseFloat(unitPrice)
+    let gstAmount = 0
+
+    // Calculate GST amount if GST rate is selected
+    if (gstRateId) {
+      const gstRate = await prisma.gstRate.findUnique({
+        where: { id: Number.parseInt(gstRateId) }
+      })
+      if (gstRate && gstRate.isActive) {
+        gstAmount = (totalPrice * gstRate.rate) / 100
+      }
+    }
 
     // Add service item
     const billItem = await prisma.billItem.create({
@@ -196,7 +218,8 @@ const addServiceItem = async (req, res) => {
         quantity: Number.parseFloat(quantity),
         unitPrice: Number.parseFloat(unitPrice),
         totalPrice,
-        gstApplicable: false, // Services typically don't have GST in medical billing
+        gstRateId: gstRateId ? Number.parseInt(gstRateId) : null,
+        gstAmount,
       },
     })
 
@@ -216,20 +239,12 @@ const recalculateBillTotals = async (billId) => {
     where: { billId },
   })
 
-  const bill = await prisma.bill.findUnique({
-    where: { id: billId },
-  })
-
   let subtotal = 0
   let gstAmount = 0
 
   billItems.forEach((item) => {
     subtotal += item.totalPrice
-
-    // Apply GST only to medicines if GST is enabled
-    if (bill.gstEnabled && item.gstApplicable && item.itemType === "medicine") {
-      gstAmount += (item.totalPrice * bill.gstRate) / 100
-    }
+    gstAmount += item.gstAmount // GST is now calculated per item
   })
 
   const totalAmount = subtotal + gstAmount
@@ -256,6 +271,9 @@ const getBill = async (req, res) => {
           include: {
             inventoryItem: {
               select: { name: true, code: true, unit: true, pricePerUnit: true, currentStock: true },
+            },
+            gstRate: {
+              select: { name: true, rate: true },
             },
           },
         },
@@ -307,7 +325,7 @@ const getBill = async (req, res) => {
 // Get all bills with filters
 const getAllBills = async (req, res) => {
   try {
-    const { status, patientId, prescriptionId, search, limit = 50, offset = 0 } = req.query
+    const { status, patientId, prescriptionId, search, limit = 50, offset = 0, startDate, endDate } = req.query
 
     const where = {}
 
@@ -330,6 +348,23 @@ const getAllBills = async (req, res) => {
         { patient: { visibleId: { contains: search, mode: "insensitive" } } },
       ]
     }
+
+    // Date filtering
+    if (startDate || endDate) {
+      where.createdAt = {}
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate)
+      }
+      if (endDate) {
+        // Add one day to include the end date
+        const endDateTime = new Date(endDate)
+        endDateTime.setDate(endDateTime.getDate() + 1)
+        where.createdAt.lt = endDateTime
+      }
+    }
+
+    // Get total count for pagination
+    const totalCount = await prisma.bill.count({ where })
 
     const bills = await prisma.bill.findMany({
       where,
@@ -361,7 +396,12 @@ const getAllBills = async (req, res) => {
       skip: Number.parseInt(offset),
     })
 
-    res.json(bills)
+    res.json({
+      bills,
+      total: totalCount,
+      page: Math.floor(Number.parseInt(offset) / Number.parseInt(limit)) + 1,
+      totalPages: Math.ceil(totalCount / Number.parseInt(limit))
+    })
   } catch (error) {
     console.error("Error fetching bills:", error)
     res.status(500).json({ error: "Failed to fetch bills" })
@@ -380,7 +420,38 @@ const updatePaymentStatus = async (req, res) => {
 
     const updateData = { status }
 
-    if (status === "Paid") {
+    // Check if bill is being marked as paid for the first time
+    const currentBill = await prisma.bill.findUnique({
+      where: { id: Number.parseInt(id) },
+      include: {
+        items: {
+          include: {
+            inventoryItem: true
+          }
+        }
+      }
+    })
+
+    if (status === "Paid" && currentBill.status !== "Paid") {
+      updateData.paymentDate = new Date()
+      if (paymentMethod) {
+        updateData.paymentMethod = paymentMethod
+      }
+
+      // Reduce inventory for medicine items
+      for (const item of currentBill.items) {
+        if (item.itemType === "medicine" && item.inventoryItemId) {
+          await prisma.inventoryItem.update({
+            where: { id: item.inventoryItemId },
+            data: {
+              currentStock: {
+                decrement: item.quantity
+              }
+            }
+          })
+        }
+      }
+    } else if (status === "Paid") {
       updateData.paymentDate = new Date()
       if (paymentMethod) {
         updateData.paymentMethod = paymentMethod
@@ -404,33 +475,65 @@ const updatePaymentStatus = async (req, res) => {
   }
 }
 
-// Toggle GST for bill
-const toggleGST = async (req, res) => {
+// Update bill item GST
+const updateBillItemGst = async (req, res) => {
   try {
-    const { id } = req.params
-    const { gstEnabled, gstRate = 18 } = req.body
+    const { billId, itemId } = req.params
+    const { gstRateId } = req.body
 
-    const bill = await prisma.bill.update({
-      where: { id: Number.parseInt(id) },
+    const bill = await prisma.bill.findUnique({
+      where: { id: Number.parseInt(billId) },
+    })
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" })
+    }
+
+    if (bill.status === "Paid") {
+      return res.status(400).json({ error: "Cannot modify paid bill" })
+    }
+
+    const billItem = await prisma.billItem.findUnique({
+      where: { id: Number.parseInt(itemId) },
+    })
+
+    if (!billItem) {
+      return res.status(404).json({ error: "Bill item not found" })
+    }
+
+    let gstAmount = 0
+
+    // Calculate new GST amount if GST rate is selected
+    if (gstRateId) {
+      const gstRate = await prisma.gstRate.findUnique({
+        where: { id: Number.parseInt(gstRateId) }
+      })
+      if (gstRate && gstRate.isActive) {
+        gstAmount = (billItem.totalPrice * gstRate.rate) / 100
+      }
+    }
+
+    // Update bill item
+    const updatedBillItem = await prisma.billItem.update({
+      where: { id: Number.parseInt(itemId) },
       data: {
-        gstEnabled: Boolean(gstEnabled),
-        gstRate: Number.parseFloat(gstRate),
+        gstRateId: gstRateId ? Number.parseInt(gstRateId) : null,
+        gstAmount,
+      },
+      include: {
+        gstRate: {
+          select: { name: true, rate: true },
+        },
       },
     })
 
-    // Recalculate totals with new GST settings
-    await recalculateBillTotals(Number.parseInt(id))
+    // Recalculate bill totals
+    await recalculateBillTotals(Number.parseInt(billId))
 
-    // Return updated bill
-    const updatedBill = await prisma.bill.findUnique({
-      where: { id: Number.parseInt(id) },
-      include: { items: true },
-    })
-
-    res.json(updatedBill)
+    res.json(updatedBillItem)
   } catch (error) {
-    console.error("Error toggling GST:", error)
-    res.status(500).json({ error: "Failed to toggle GST" })
+    console.error("Error updating bill item GST:", error)
+    res.status(500).json({ error: "Failed to update bill item GST" })
   }
 }
 
@@ -586,6 +689,90 @@ const getConsultationFee = async (req, res) => {
   }
 }
 
+// Get bill invoice data with hospital information
+const getBillInvoice = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Get bill details
+    const bill = await prisma.bill.findUnique({
+      where: { id: Number.parseInt(id) },
+      include: {
+        items: {
+          include: {
+            inventoryItem: {
+              select: { name: true, code: true, unit: true, pricePerUnit: true, currentStock: true },
+            },
+            gstRate: {
+              select: { name: true, rate: true },
+            },
+          },
+        },
+        patient: {
+          select: {
+            name: true,
+            visibleId: true,
+            phone: true,
+            email: true,
+            address: true,
+          },
+        },
+        appointment: {
+          select: {
+            date: true,
+            time: true,
+            type: true,
+          },
+        },
+        prescription: {
+          select: {
+            doctorName: true,
+            createdAt: true,
+            medications: {
+              select: {
+                id: true,
+                medicineName: true,
+                dosage: true,
+                frequency: true,
+                duration: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" })
+    }
+
+    // Get hospital information
+    const hospitalInfo = await prisma.hospitalSettings.findFirst({
+      select: {
+        name: true,
+        address: true,
+        phone: true,
+        email: true,
+        license: true,
+      },
+    })
+
+    res.json({
+      bill,
+      hospitalInfo: hospitalInfo || {
+        name: "Medical Clinic",
+        address: "",
+        phone: "",
+        email: "",
+        license: "",
+      },
+    })
+  } catch (error) {
+    console.error("Error fetching bill invoice:", error)
+    res.status(500).json({ error: "Failed to fetch bill invoice" })
+  }
+}
+
 module.exports = {
   createBillFromPrescription,
   addMedicineItem,
@@ -593,9 +780,10 @@ module.exports = {
   getBill,
   getAllBills,
   updatePaymentStatus,
-  toggleGST,
+  updateBillItemGst,
   deleteBillItem,
   getBillingAnalytics,
   getAvailableMedicines,
   getConsultationFee,
+  getBillInvoice,
 }

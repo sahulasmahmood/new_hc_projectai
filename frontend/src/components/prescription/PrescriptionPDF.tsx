@@ -1,5 +1,5 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, Font, pdf } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Font, pdf, Image } from '@react-pdf/renderer';
 import { format } from 'date-fns';
 
 // Register fonts for better typography (fallback to system fonts if external fails)
@@ -18,6 +18,8 @@ interface Prescription {
   date: string;
   createdAt: string;
   doctorName: string;
+  doctorQualification?: string;
+  doctorRegistrationNumber?: string;
   doctorSignature?: string;
   chiefComplaint?: string;
   medications: Array<{
@@ -182,7 +184,7 @@ const styles = StyleSheet.create({
   },
   signatureSection: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'flex-end',
     marginTop: 30,
     borderTopWidth: 1,
@@ -204,6 +206,12 @@ const styles = StyleSheet.create({
     width: 120,
     height: 30,
     marginBottom: 4,
+  },
+  signatureImage: {
+    maxHeight: 30,
+    maxWidth: 120,
+    marginBottom: 4,
+    border: '1px solid #ccc',
   },
   doctorName: {
     fontSize: 10,
@@ -249,40 +257,39 @@ const PrescriptionPDF: React.FC<PrescriptionPDFProps> = ({
           {hospitalInfo?.phone && hospitalInfo?.email && ' | '}
           {hospitalInfo?.email && `Email: ${hospitalInfo.email}`}
         </Text>
-        {hospitalInfo?.license && (
-          <Text style={styles.hospitalDetails}>Reg. No: {hospitalInfo.license}</Text>
-        )}
       </View>
 
       {/* Patient Information - Structured Layout */}
       <View style={styles.patientInfo}>
         <View style={styles.patientDetails}>
-          <Text style={styles.patientDetailRow}>
-            <Text style={styles.patientLabel}>Patient: </Text>
-            {prescription.patientName || prescription.patient?.name || patientName}
+          <Text style={[styles.patientDetailRow, { fontSize: 12, fontWeight: 'bold', marginBottom: 4 }]}>
+            Patient: {prescription.patientName || prescription.patient?.name || patientName}
           </Text>
           <Text style={styles.patientDetailRow}>
-            <Text style={styles.patientLabel}>ID: </Text>
+            <Text style={{ fontWeight: 'bold' }}>ID: </Text>
             {prescription.patientVisibleId || prescription.patient?.visibleId || patientId}
           </Text>
           <Text style={styles.patientDetailRow}>
-            <Text style={styles.patientLabel}>Age/Gender: </Text>
-            {prescription.patientAge || prescription.patient?.age || 'N/A'} years, {prescription.patientGender || prescription.patient?.gender || 'N/A'}
+            <Text style={{ fontWeight: 'bold' }}>Age & Gender: </Text>
+            {prescription.patientAge || prescription.patient?.age || 'N/A'} years • {prescription.patientGender || prescription.patient?.gender || 'N/A'}
           </Text>
         </View>
         <View style={styles.dateInfo}>
           <Text style={styles.patientDetailRow}>
             <Text style={{ fontWeight: 'bold' }}>Date: </Text>
-            {format(new Date(prescription.createdAt), 'dd/MM/yyyy')}
-          </Text>
-          <Text style={styles.patientDetailRow}>
-            <Text style={{ fontWeight: 'bold' }}>Time: </Text>
-            {format(new Date(prescription.createdAt), 'HH:mm')}
+            {format(new Date(prescription.createdAt), 'dd MMM yyyy')}
           </Text>
           <Text style={styles.patientDetailRow}>
             <Text style={{ fontWeight: 'bold' }}>Doctor: </Text>
             Dr. {prescription.doctorName}
+            {prescription.doctorQualification && `, ${prescription.doctorQualification}`}
           </Text>
+          {prescription.doctorRegistrationNumber && (
+            <Text style={styles.patientDetailRow}>
+              <Text style={{ fontWeight: 'bold' }}>Reg. No: </Text>
+              {prescription.doctorRegistrationNumber}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -354,16 +361,21 @@ const PrescriptionPDF: React.FC<PrescriptionPDFProps> = ({
       {/* Professional Signature Section */}
       <View style={styles.signatureSection}>
         <View style={styles.signatureBox}>
-          <Text style={styles.signatureLabel}>Patient/Guardian Signature</Text>
-          <View style={styles.signatureLine} />
-          <Text style={{ fontSize: 8, marginTop: 4 }}>Date: ___________</Text>
-        </View>
-        <View style={styles.signatureBox}>
           <Text style={styles.signatureLabel}>Doctor's Signature</Text>
-          <View style={styles.signatureLine} />
-          <Text style={styles.doctorName}>Dr. {prescription.doctorName}</Text>
-          {hospitalInfo?.license && (
-            <Text style={styles.regNumber}>Reg. No: {hospitalInfo.license}</Text>
+          {prescription.doctorSignature && prescription.doctorSignature.startsWith('data:image') ? (
+            <Image
+              src={prescription.doctorSignature}
+              style={styles.signatureImage}
+            />
+          ) : (
+            <View style={styles.signatureLine} />
+          )}
+          <Text style={styles.doctorName}>
+            Dr. {prescription.doctorName}
+            {prescription.doctorQualification && `, ${prescription.doctorQualification}`}
+          </Text>
+          {prescription.doctorRegistrationNumber && (
+            <Text style={styles.regNumber}>Reg. No: {prescription.doctorRegistrationNumber}</Text>
           )}
         </View>
       </View>

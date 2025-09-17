@@ -19,7 +19,7 @@ const createPrescription = async (req, res) => {
     // Get doctor information - MANDATORY for security
     const doctor = await prisma.staff.findUnique({
       where: { id: Number.parseInt(doctorId) },
-      select: { name: true, qualification: true, digitalSignature: true },
+      select: { name: true, qualification: true, registrationNumber: true, digitalSignature: true },
     })
 
     if (!doctor) {
@@ -68,6 +68,8 @@ const createPrescription = async (req, res) => {
         doctorNotes,
         advice,
         doctorName: finalDoctorName,
+        doctorQualification: doctor.qualification,
+        doctorRegistrationNumber: doctor.registrationNumber,
         doctorSignature,
         medications: {
           create:

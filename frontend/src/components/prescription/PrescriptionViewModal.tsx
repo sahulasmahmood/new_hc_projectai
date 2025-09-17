@@ -17,6 +17,8 @@ interface PrescriptionViewModalProps {
     doctorNotes?: string
     advice?: string
     doctorName: string
+    doctorQualification?: string
+    doctorRegistrationNumber?: string
     doctorSignature?: string
     // Direct patient fields (stored in prescription)
     patientName?: string
@@ -55,7 +57,11 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
   } | null>(null)
   const [loadingHospitalInfo, setLoadingHospitalInfo] = useState(true)
   const [isGeneratingBill, setIsGeneratingBill] = useState(false)
-  const [existingBill, setExistingBill] = useState<any>(null)
+  const [existingBill, setExistingBill] = useState<{
+    billNumber: string;
+    totalAmount: number;
+    prescriptionId: number;
+  } | null>(null)
   const [checkingBill, setCheckingBill] = useState(false)
   const { toast } = useToast()
 
@@ -84,8 +90,17 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
       try {
         setCheckingBill(true)
         const response = await api.get(`/billing?prescriptionId=${prescription.id}&_t=${Date.now()}`)
-        if (response.data && response.data.length > 0) {
-          const prescriptionBill = response.data.find((bill) => bill.prescriptionId === prescription.id)
+        
+        // Handle both array response and paginated response
+        let bills = []
+        if (response.data.bills) {
+          bills = response.data.bills
+        } else if (Array.isArray(response.data)) {
+          bills = response.data
+        }
+        
+        if (bills && bills.length > 0) {
+          const prescriptionBill = bills.find((bill) => bill.prescriptionId === prescription.id)
           setExistingBill(prescriptionBill || null)
         } else {
           setExistingBill(null)
@@ -114,11 +129,12 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
       })
 
       setExistingBill(response.data)
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       console.error("Error generating bill:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate bill"
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to generate bill",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
@@ -152,13 +168,18 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
             <div class="header">
               <h1>${hospitalInfo?.name?.toUpperCase() || "MEDICAL CLINIC"}</h1>
               ${hospitalInfo?.phone ? `<p>Emergency: ${hospitalInfo.phone}</p>` : ""}
-              ${hospitalInfo?.license ? `<p>Lic. No.: ${hospitalInfo.license}</p>` : ""}
             </div>
             <div class="patient-info">
-              <div><strong>Patient:</strong> ${prescription.patientName || prescription.patient?.name || "N/A"} (${prescription.patientVisibleId || prescription.patient?.visibleId || "N/A"})<br>
-                   <strong>Age/Gender:</strong> ${prescription.patientAge || prescription.patient?.age || "N/A"} years • ${prescription.patientGender || prescription.patient?.gender || "N/A"}</div>
-              <div><strong>Date:</strong> ${formatDate(prescription.createdAt)}<br>
-                   <strong>Doctor:</strong> ${prescription.doctorName}</div>
+              <div>
+                <div style="margin-bottom: 8px;"><strong>Patient:</strong> ${prescription.patientName || prescription.patient?.name || "N/A"}</div>
+                <div style="margin-bottom: 4px;"><strong>ID:</strong> ${prescription.patientVisibleId || prescription.patient?.visibleId || "N/A"}</div>
+                <div><strong>Age & Gender:</strong> ${prescription.patientAge || prescription.patient?.age || "N/A"} years • ${prescription.patientGender || prescription.patient?.gender || "N/A"}</div>
+              </div>
+              <div>
+                <div style="margin-bottom: 4px;"><strong>Date:</strong> ${formatDate(prescription.createdAt)}</div>
+                <div style="margin-bottom: 4px;"><strong>Doctor:</strong> Dr. ${prescription.doctorName}${prescription.doctorQualification ? `, ${prescription.doctorQualification}` : ""}</div>
+                ${prescription.doctorRegistrationNumber ? `<div><strong>Reg. No:</strong> ${prescription.doctorRegistrationNumber}</div>` : ""}
+              </div>
             </div>
             ${prescription.chiefComplaint ? `<div class="section"><div class="section-title">Chief Complaints & Diagnosis:</div><p>${prescription.chiefComplaint}</p></div>` : ""}
             <div class="section">
@@ -176,15 +197,17 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
             ${prescription.investigations ? `<div class="section"><div class="section-title">Investigations:</div><p>${prescription.investigations}</p></div>` : ""}
             ${prescription.doctorNotes ? `<div class="section"><div class="section-title">Doctor Notes:</div><p>${prescription.doctorNotes}</p></div>` : ""}
             ${prescription.advice ? `<div class="section"><div class="section-title">Advice:</div><p>${prescription.advice}</p></div>` : ""}
-            <div class="signature-section">
-              <div><div style="font-size: 12px; margin-bottom: 5px;">Doctor Signature:</div>
+            <div class="signature-section" style="justify-content: flex-end;">
+              <div style="text-align: center;">
+                <div style="font-size: 12px; margin-bottom: 5px; font-weight: bold;">Doctor's Signature</div>
                 ${
                   prescription.doctorSignature && prescription.doctorSignature.startsWith("data:image")
-                    ? `<img src="${prescription.doctorSignature}" alt="Doctor Signature" />`
-                    : `<div style="font-style: italic; font-size: 16px;">${prescription.doctorName}</div>`
+                    ? `<img src="${prescription.doctorSignature}" alt="Doctor Signature" style="max-height: 60px; max-width: 150px; border: 1px solid #ccc; margin-bottom: 5px;" />`
+                    : `<div style="height: 40px; border-bottom: 1px solid #000; width: 150px; margin: 0 auto 5px auto;"></div>`
                 }
+                <div style="font-weight: bold; font-size: 14px;">Dr. ${prescription.doctorName}${prescription.doctorQualification ? `, ${prescription.doctorQualification}` : ""}</div>
+                ${prescription.doctorRegistrationNumber ? `<div style="font-size: 10px; margin-top: 2px; color: #666;">Reg. No: ${prescription.doctorRegistrationNumber}</div>` : ""}
               </div>
-              <div><div style="font-size: 12px; margin-bottom: 5px;">Date:</div><div style="font-weight: bold;">${formatDate(prescription.createdAt)}</div></div>
             </div>
           </div>
         </body>
@@ -318,9 +341,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                       <div className="text-xs text-gray-600">
                         <div className="flex flex-wrap justify-center gap-2">
                           {hospitalInfo?.phone && <span>Emergency: {hospitalInfo.phone}</span>}
-                          {hospitalInfo?.phone && hospitalInfo?.license && <span>|</span>}
-                          {hospitalInfo?.license && <span>Lic. No.: {hospitalInfo.license}</span>}
-                          {!hospitalInfo?.phone && !hospitalInfo?.license && (
+                          {!hospitalInfo?.phone && (
                             <span className="text-orange-600">Please configure Hospital Information in Settings</span>
                           )}
                         </div>
@@ -333,33 +354,37 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                 </div>
 
               {/* Patient Info */}
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-200">
-                  <div>
-                    <h2 className="text-base font-semibold">
-                      Patient:{" "}
-                      {prescription.patientName || prescription.patient?.name || "Patient information not available"}
+                <div className="flex items-start justify-between mb-6 pb-3 border-b border-gray-200">
+                  <div className="flex-1">
+                    <h2 className="text-lg font-semibold mb-3">
+                      Patient: {prescription.patientName || prescription.patient?.name || "Patient information not available"}
                     </h2>
-                    <div className="flex items-center gap-3 mt-1">
+                    <div className="space-y-1">
                       {prescription.patientName || prescription.patient ? (
                         <>
-                          <p className="text-xs text-gray-600">
-                            ID: {prescription.patientVisibleId || prescription.patient?.visibleId}
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">ID:</span> {prescription.patientVisibleId || prescription.patient?.visibleId}
                           </p>
-                          <p className="text-xs text-gray-600">
-                            {prescription.patientAge || prescription.patient?.age} years •{" "}
-                            {prescription.patientGender || prescription.patient?.gender}
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">Age & Gender:</span> {prescription.patientAge || prescription.patient?.age} years • {prescription.patientGender || prescription.patient?.gender}
                           </p>
                         </>
                       ) : (
-                        <p className="text-xs text-orange-600">
+                        <p className="text-sm text-orange-600">
                           Patient details not loaded - please refresh or contact support
                         </p>
                       )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-600">Date: {formatDate(prescription.createdAt)}</p>
-                    <p className="text-xs text-gray-600">Doctor: {prescription.doctorName}</p>
+                  <div className="text-right ml-4">
+                    <p className="text-sm text-gray-600 mb-1"><span className="font-medium">Date:</span> {formatDate(prescription.createdAt)}</p>
+                    <p className="text-sm text-gray-600 mb-1">
+                      <span className="font-medium">Doctor:</span> Dr. {prescription.doctorName}
+                      {prescription.doctorQualification && `, ${prescription.doctorQualification}`}
+                    </p>
+                    {prescription.doctorRegistrationNumber && (
+                      <p className="text-sm text-gray-600"><span className="font-medium">Reg. No:</span> {prescription.doctorRegistrationNumber}</p>
+                    )}
                   </div>
                 </div>
 
@@ -445,25 +470,24 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                   )}
                 </div>
 
-                {prescription.doctorSignature && prescription.doctorSignature.startsWith("data:image") && (
-                  <div className="flex justify-between items-end mt-6 pt-4 border-t border-gray-300">
-                    <div>
-                      <div className="text-sm text-gray-600 mb-1">Doctor Signature:</div>
+                {/* Doctor Signature Section */}
+                <div className="flex justify-end items-end mt-6 pt-4 border-t border-gray-300">
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Doctor's Signature</div>
+                    {prescription.doctorSignature && prescription.doctorSignature.startsWith("data:image") ? (
                       <div className="space-y-2">
                         <img
-                          src={prescription.doctorSignature || "/placeholder.svg"}
+                          src={prescription.doctorSignature}
                           alt="Doctor Signature"
-                          className="h-16 border border-gray-200 bg-white rounded"
+                          className="h-16 max-w-32 border border-gray-200 bg-white rounded mx-auto"
                         />
                         <div className="text-xs text-green-600">✓ Verified Digital Signature</div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-600 mb-1">Date:</div>
-                      <div className="font-medium">{formatDate(prescription.createdAt)}</div>
-                    </div>
+                    ) : (
+                      <div className="w-32 h-12 border-b border-gray-400 mb-2 mx-auto"></div>
+                    )}
                   </div>
-                )}
+                </div>
               </CardContent>
             </Card>
           </div>

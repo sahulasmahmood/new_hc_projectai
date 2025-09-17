@@ -211,29 +211,29 @@ model MedicalReport {
 }
 
 model Staff {
-  id               Int         @id @default(autoincrement())
-  employeeId       String?     @unique @db.VarChar(50) // Auto-generated employee ID
-  name             String      @db.VarChar(100)
-  role             String      @db.VarChar(50)
-  gender           String?     @db.VarChar(10)
-  dateOfBirth      DateTime?
-  qualification    String?
-  experience       String?
-  phone            String?     @db.VarChar(20)
-  email            String?     @db.VarChar(100)
-  dateOfHiring     DateTime?
-  status           String      @default("On Duty") @db.VarChar(20)
-  shift            String?     @db.VarChar(20)
-  shiftId          Int? // Reference to Shift model
-  weekOff          String?     @db.VarChar(20) // Day of the week
-  consultationFee  String?
-  digitalSignature String? // Path to digital signature image or base64 encoded signature
-  documents        String[] // Array of document paths
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  departmentId     Int?
-  department       Department? @relation(fields: [departmentId], references: [id])
-  shiftTime        Shift?      @relation(fields: [shiftId], references: [id])
+  id                 Int         @id @default(autoincrement())
+  employeeId         String?     @unique @db.VarChar(50) // Auto-generated employee ID
+  name               String      @db.VarChar(100)
+  role               String      @db.VarChar(50)
+  gender             String?     @db.VarChar(10)
+  dateOfBirth        DateTime?
+  qualification      String?
+  registrationNumber String?     @db.VarChar(100) // Doctor's registration number
+  experience         String?
+  phone              String?     @db.VarChar(20)
+  email              String?     @db.VarChar(100)
+  dateOfHiring       DateTime?
+  status             String      @default("On Duty") @db.VarChar(20)
+  shiftId            Int? // Reference to Shift model
+  weekOff            String?     @db.VarChar(20) // Day of the week
+  consultationFee    String?
+  digitalSignature   String? // Path to digital signature image or base64 encoded signature
+  documents          String[] // Array of document paths
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  departmentId       Int?
+  department         Department? @relation(fields: [departmentId], references: [id])
+  shiftTime          Shift?      @relation(fields: [shiftId], references: [id])
 
   @@index([departmentId])
   @@index([shiftId])
@@ -290,26 +290,28 @@ model PatientVitals {
 }
 
 model Prescription {
-  id               Int                      @id @default(autoincrement())
-  patientId        Int
-  patient          Patient                  @relation(fields: [patientId], references: [id])
-  appointmentId    Int?
-  appointment      Appointment?             @relation(fields: [appointmentId], references: [id])
+  id                       Int                      @id @default(autoincrement())
+  patientId                Int
+  patient                  Patient                  @relation(fields: [patientId], references: [id])
+  appointmentId            Int?
+  appointment              Appointment?             @relation(fields: [appointmentId], references: [id])
   // Store patient info directly for easy access
-  patientName      String?
-  patientVisibleId String?
-  patientAge       Int?
-  patientGender    String?
-  chiefComplaint   String?                  @db.Text
-  investigations   String?                  @db.Text
-  doctorNotes      String?                  @db.Text
-  advice           String?                  @db.Text
-  doctorName       String
-  doctorSignature  String?
-  medications      PrescriptionMedication[]
-  bills            Bill[] // Relation to bills
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
+  patientName              String?
+  patientVisibleId         String?
+  patientAge               Int?
+  patientGender            String?
+  chiefComplaint           String?                  @db.Text
+  investigations           String?                  @db.Text
+  doctorNotes              String?                  @db.Text
+  advice                   String?                  @db.Text
+  doctorName               String
+  doctorQualification      String?
+  doctorRegistrationNumber String?
+  doctorSignature          String?
+  medications              PrescriptionMedication[]
+  bills                    Bill[] // Relation to bills
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
 
   @@index([patientId])
   @@index([appointmentId])
@@ -340,17 +342,13 @@ model Bill {
 
   // Bill details
   subtotal    Float  @default(0)
-  gstAmount   Float  @default(0)
+  gstAmount   Float  @default(0) // Total GST amount (sum of all item GST amounts)
   totalAmount Float
   status      String @default("Pending") // Pending, Paid, Overdue, Cancelled
 
   // Payment details
   paymentMethod String? // Cash, UPI, Card, etc.
   paymentDate   DateTime?
-
-  // GST settings
-  gstEnabled Boolean @default(false)
-  gstRate    Float   @default(18) // GST percentage
 
   // Bill items
   items BillItem[]
@@ -361,6 +359,20 @@ model Bill {
   @@index([patientId])
   @@index([appointmentId])
   @@index([prescriptionId])
+}
+
+model GstRate {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // e.g., "Medicine GST", "Cosmetic GST", "Lab Test GST"
+  rate        Float // GST percentage (e.g., 5, 12, 18, 28)
+  description String? // Optional description
+  category    String? // e.g., "medicine", "cosmetic", "lab", "service"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  billItems BillItem[]
 }
 
 model BillItem {
@@ -382,11 +394,14 @@ model BillItem {
   inventoryItemId Int?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
 
-  // GST application
-  gstApplicable Boolean @default(false)
+  // GST application - now using GST rates
+  gstRateId Int?
+  gstRate   GstRate? @relation(fields: [gstRateId], references: [id])
+  gstAmount Float    @default(0) // Calculated GST amount for this item
 
   createdAt DateTime @default(now())
 
   @@index([billId])
   @@index([inventoryItemId])
+  @@index([gstRateId])
 }

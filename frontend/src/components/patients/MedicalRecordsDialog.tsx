@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -41,11 +40,11 @@ const MedicalRecordsDialog = ({ patient, trigger }: MedicalRecordsDialogProps) =
       ]);
 
       // Filter and format appointments as visits for this patient
-      const patientAppointments = (appointmentsResponse.data || []).filter((appointment: unknown) => 
+      const patientAppointments = (appointmentsResponse.data || []).filter((appointment: any) => 
         appointment.patientId === patient.id
       );
       
-      const visits = patientAppointments.map((appointment: unknown) => ({
+      const visits = patientAppointments.map((appointment: any) => ({
         id: appointment.id,
         date: appointment.date,
         time: appointment.time,
@@ -58,11 +57,13 @@ const MedicalRecordsDialog = ({ patient, trigger }: MedicalRecordsDialogProps) =
       }));
 
       // Format prescriptions - include ALL fields needed by PrescriptionViewModal
-      const prescriptions = (prescriptionsResponse.data || []).map((prescription: unknown) => ({
+      const prescriptions = (prescriptionsResponse.data || []).map((prescription: any) => ({
         id: prescription.id,
         date: prescription.createdAt,
         createdAt: prescription.createdAt,
         doctorName: prescription.doctorName,
+        doctorQualification: prescription.doctorQualification,
+        doctorRegistrationNumber: prescription.doctorRegistrationNumber,
         doctorSignature: prescription.doctorSignature,
         chiefComplaint: prescription.chiefComplaint,
         medications: prescription.medications || [],
@@ -454,12 +455,6 @@ This is a confidential medical record from MediClinic.`;
           text: shareText,
         });
         
-        // Only show success message if share was actually completed
-        toast({
-          title: "Shared Successfully",
-          description: "Medical records summary has been shared.",
-          duration: 3000,
-        });
         return;
       } catch (error) {
         // User cancelled or sharing failed, fall back to clipboard

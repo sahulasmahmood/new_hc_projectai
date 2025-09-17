@@ -388,7 +388,7 @@ const Patients = () => {
                     <MedicalRecordsDialog
                       patient={patient}
                       trigger={
-                        <Button variant="outline" size="sm" className="flex-1 text-xs">
+                        <Button variant="outline" size="sm" className="flex-1">
                           View Records
                         </Button>
                       }

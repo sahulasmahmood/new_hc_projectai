@@ -32,6 +32,8 @@ interface Prescription {
   date: string;
   createdAt: string;
   doctorName: string;
+  doctorQualification?: string;
+  doctorRegistrationNumber?: string;
   doctorSignature?: string;
   chiefComplaint?: string;
   medications: Array<{
@@ -183,7 +185,13 @@ const PrescriptionsTab = ({
                     <TableCell>
                       <div className="font-medium">
                         Dr. {prescription.doctorName}
+                        {prescription.doctorQualification && `, ${prescription.doctorQualification}`}
                       </div>
+                      {prescription.doctorRegistrationNumber && (
+                        <div className="text-xs text-gray-500">
+                          Reg. No: {prescription.doctorRegistrationNumber}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-xs">
                       <div

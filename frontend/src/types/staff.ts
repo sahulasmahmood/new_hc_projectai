@@ -32,11 +32,11 @@ export interface StaffMember {
   shiftId?: number;
   shiftTime?: Shift;
   qualification?: string;
+  registrationNumber?: string;
   experience?: string;
   phone?: string;
   email?: string;
   status: string;
-  shift?: string;
   weekOff?: string;
   consultationFee?: string;
   digitalSignature?: string;

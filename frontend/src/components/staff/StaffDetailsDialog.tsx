@@ -153,6 +153,15 @@ const StaffDetailsDialog = ({ staff, open, onOpenChange, onEdit }: StaffDetailsD
                     </div>
                   </div>
                 )}
+                {staff.registrationNumber && (
+                  <div>
+                    <div className="text-sm text-gray-600">Registration Number</div>
+                    <div className="flex items-center gap-2">
+                      <Award className="h-4 w-4 text-gray-500" />
+                      <span className="font-medium">{staff.registrationNumber}</span>
+                    </div>
+                  </div>
+                )}
                 {staff.experience && (
                   <div>
                     <div className="text-sm text-gray-600">Experience</div>

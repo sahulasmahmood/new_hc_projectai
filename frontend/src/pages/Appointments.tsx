@@ -35,6 +35,7 @@ import { FilterValues } from "@/components/appointments/FilterDialog";
 
 interface Appointment {
   id: number;
+  patientId: number; // Add this line
   patientName: string;
   patientPhone: string;
   date: string;
@@ -591,7 +592,7 @@ const Appointments = () => {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => navigate(`/patients?consultationId=${appointment.id}`)}
+                            onClick={() => navigate(`/patient-exam?patientId=${appointment.patientId}&role=doctor&appointmentId=${appointment.id}`)}
                           >
                             Go to Patient
                           </Button>

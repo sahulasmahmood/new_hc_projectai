@@ -61,6 +61,7 @@ const initialFormData = {
   dateOfBirth: "",
   dateOfHiring: "",
   qualification: "",
+  registrationNumber: "",
   experience: "",
   phone: "",
   email: "",
@@ -562,7 +563,20 @@ const StaffEditDialog = ({
                     onChange={(e) =>
                       handleChange("qualification", e.target.value)
                     }
-                    placeholder="Enter qualification"
+                    placeholder="Enter qualification (e.g., MBBS, MD)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="registrationNumber">Reg. No. {formData.role === 'Doctor' && <span className="text-red-500">*</span>}</Label>
+                  <Input
+                    id="registrationNumber"
+                    value={formData.registrationNumber || ""}
+                    onChange={(e) =>
+                      handleChange("registrationNumber", e.target.value)
+                    }
+                    placeholder="Enter registration number (e.g., TN/12345)"
+                    required={formData.role === 'Doctor'}
                   />
                 </div>
 

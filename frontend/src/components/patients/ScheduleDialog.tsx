@@ -243,7 +243,7 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.date ? format(new Date(formData.date), "PPP") : "Pick a date"}
+                    {formData.date ? format(new Date(formData.date), "MMM d, yyyy") : "Pick a date"} {/* Changed from "PPP" */}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">

@@ -7,11 +7,12 @@ const {
   getBill,
   getAllBills,
   updatePaymentStatus,
-  toggleGST,
+  updateBillItemGst,
   deleteBillItem,
   getBillingAnalytics,
   getAvailableMedicines,
   getConsultationFee,
+  getBillInvoice,
 } = require("../controllers/billing/billing")
 
 // Create bill from prescription
@@ -35,8 +36,8 @@ router.post("/:billId/services", addServiceItem)
 // Update payment status
 router.put("/:id/payment", updatePaymentStatus)
 
-// Toggle GST for bill
-router.put("/:id/gst", toggleGST)
+// Update bill item GST
+router.put("/:billId/items/:itemId/gst", updateBillItemGst)
 
 // Delete bill item
 router.delete("/:billId/items/:itemId", deleteBillItem)
@@ -46,5 +47,8 @@ router.get("/medicines/available", getAvailableMedicines)
 
 // Get doctor's consultation fee
 router.get("/consultation-fee/:doctorName", getConsultationFee)
+
+// Get invoice data (bill with hospital info)
+router.get("/:id/invoice", getBillInvoice)
 
 module.exports = router
