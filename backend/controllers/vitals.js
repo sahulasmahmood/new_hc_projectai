@@ -83,35 +83,59 @@ const createVitals = async (req, res) => {
 
     const vitalData = prepareVitalsData(req.body);
 
-    // Use upsert to either create new or update existing vitals for this patient/appointment
-    const vitals = await prisma.patientVitals.upsert({
-      where: {
-        unique_patient_appointment_vitals: {
-          patientId: parseInt(patientId),
-          appointmentId: appointmentId ? parseInt(appointmentId) : null
-        }
-      },
-      update: {
-        ...vitalData,
-        updatedAt: new Date()
-      },
-      create: vitalData,
-      include: {
-        patient: {
-          select: {
-            name: true,
-            visibleId: true
+    let vitals;
+
+    if (appointmentId) {
+      // If appointmentId is provided, use upsert with the unique constraint
+      vitals = await prisma.patientVitals.upsert({
+        where: {
+          unique_patient_appointment_vitals: {
+            patientId: parseInt(patientId),
+            appointmentId: parseInt(appointmentId)
           }
         },
-        appointment: {
-          select: {
-            date: true,
-            time: true,
-            type: true
+        update: {
+          ...vitalData,
+          updatedAt: new Date()
+        },
+        create: vitalData,
+        include: {
+          patient: {
+            select: {
+              name: true,
+              visibleId: true
+            }
+          },
+          appointment: {
+            select: {
+              date: true,
+              time: true,
+              type: true
+            }
           }
         }
-      }
-    });
+      });
+    } else {
+      // If no appointmentId, just create a new vitals record (allow multiple records without appointment)
+      vitals = await prisma.patientVitals.create({
+        data: vitalData,
+        include: {
+          patient: {
+            select: {
+              name: true,
+              visibleId: true
+            }
+          },
+          appointment: {
+            select: {
+              date: true,
+              time: true,
+              type: true
+            }
+          }
+        }
+      });
+    }
 
     res.status(200).json({
       ...vitals,

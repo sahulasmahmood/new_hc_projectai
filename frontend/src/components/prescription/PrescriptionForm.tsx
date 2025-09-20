@@ -39,15 +39,47 @@ interface PrescriptionFormProps {
   patientName: string;
   appointmentId?: string;
   onSave?: (prescriptionData: unknown) => void;
+  onFormDataChange?: (hasData: boolean) => void;
 }
 
-const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: PrescriptionFormProps) => {
+const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFormDataChange }: PrescriptionFormProps) => {
   const { toast } = useToast();
-  const [medications, setMedications] = useState<Medication[]>([]);
-  const [chiefComplaint, setChiefComplaint] = useState("");
-  const [investigations, setInvestigations] = useState("");
-  const [doctorNotes, setDoctorNotes] = useState("");
-  const [advice, setAdvice] = useState("");
+  
+  // Form state persistence key
+  const formStateKey = `prescription_form_${patientId}_${appointmentId || 'general'}`;
+  
+  // Initialize state from localStorage if available
+  const getInitialFormState = () => {
+    try {
+      const saved = localStorage.getItem(formStateKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          medications: parsed.medications || [],
+          chiefComplaint: parsed.chiefComplaint || "",
+          investigations: parsed.investigations || "",
+          doctorNotes: parsed.doctorNotes || "",
+          advice: parsed.advice || ""
+        };
+      }
+    } catch (error) {
+      console.error("Error loading saved form state:", error);
+    }
+    return {
+      medications: [],
+      chiefComplaint: "",
+      investigations: "",
+      doctorNotes: "",
+      advice: ""
+    };
+  };
+
+  const initialState = getInitialFormState();
+  const [medications, setMedications] = useState<Medication[]>(initialState.medications);
+  const [chiefComplaint, setChiefComplaint] = useState(initialState.chiefComplaint);
+  const [investigations, setInvestigations] = useState(initialState.investigations);
+  const [doctorNotes, setDoctorNotes] = useState(initialState.doctorNotes);
+  const [advice, setAdvice] = useState(initialState.advice);
   const [saving, setSaving] = useState(false);
   
   // Simple data loss prevention
@@ -55,27 +87,31 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
     return chiefComplaint.trim() || investigations.trim() || doctorNotes.trim() || advice.trim() || medications.length > 0;
   };
 
-  // Prevent accidental navigation
+  // Auto-save form state to localStorage
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasFormData()) {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved prescription data. Are you sure you want to leave?';
-      }
+    const formState = {
+      medications,
+      chiefComplaint,
+      investigations,
+      doctorNotes,
+      advice
     };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [chiefComplaint, investigations, doctorNotes, advice, medications]);
-
-  // Track unsaved changes for sidebar navigation
-  useEffect(() => {
-    if (hasFormData()) {
-      localStorage.setItem('prescription_unsaved', 'true');
+    
+    const hasData = hasFormData();
+    if (hasData) {
+      localStorage.setItem(formStateKey, JSON.stringify(formState));
     } else {
-      localStorage.removeItem('prescription_unsaved');
+      localStorage.removeItem(formStateKey);
     }
-  }, [chiefComplaint, investigations, doctorNotes, advice, medications]);
+    
+    // Notify parent component about form data changes
+    onFormDataChange?.(hasData);
+  }, [medications, chiefComplaint, investigations, doctorNotes, advice, formStateKey, onFormDataChange]);
+
+  // Clear saved state when prescription is successfully saved
+  const clearSavedState = () => {
+    localStorage.removeItem(formStateKey);
+  };
   const [hospitalInfo, setHospitalInfo] = useState<{
     name?: string;
     phone?: string;
@@ -235,12 +271,13 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
         duration: 5000
       });
 
-      // Clear form after successful save
+      // Clear form and saved state after successful save
       setChiefComplaint("");
       setMedications([]);
       setInvestigations("");
       setDoctorNotes("");
       setAdvice("");
+      clearSavedState();
       setSelectedDoctorId("");
       localStorage.removeItem('prescription_unsaved');
     } catch (error) {
@@ -283,11 +320,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave }: Pre
                   {hospitalInfo?.phone && (
                     <span>Emergency: {hospitalInfo.phone}</span>
                   )}
-                  {hospitalInfo?.phone && hospitalInfo?.license && <span>|</span>}
-                  {hospitalInfo?.license && (
-                    <span>Lic. No.: {hospitalInfo.license}</span>
-                  )}
-                  {(!hospitalInfo?.phone && !hospitalInfo?.license) && (
+                  {!hospitalInfo?.phone && (
                     <span className="text-orange-600">Please configure Hospital Information in Settings</span>
                   )}
                 </div>

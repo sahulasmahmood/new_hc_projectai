@@ -55,9 +55,13 @@ const Patients = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [patientsPerPage] = useState(9); // 3x3 grid
-  const [selectedDate, setSelectedDate] = useState(() => {
+  const [dateRange, setDateRange] = useState(() => {
     const today = new Date();
-    return today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    const todayStr = today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    return {
+      startDate: todayStr,
+      endDate: todayStr
+    };
   });
   const [filterType, setFilterType] = useState<"lastVisit" | "createdAt" | "consultation" | "all">("lastVisit");
   const navigate = useNavigate();
@@ -108,7 +112,7 @@ const Patients = () => {
     }
   }, [searchTerm, consultationId]);
 
-  // Filter patients based on selectedDate and filterType
+  // Filter patients based on dateRange and filterType
   const filteredPatients = patients.filter(patient => {
     if (filterType === "all") {
       return true; // Show all patients
@@ -117,11 +121,21 @@ const Patients = () => {
     } else if (filterType === "lastVisit") {
       if (!patient.lastVisit) return false; // Skip patients with no last visit
       const patientDate = patient.lastVisit.split('T')[0];
-      return patientDate === selectedDate;
+      
+      // Check if patient date is within the range
+      if (dateRange.startDate && patientDate < dateRange.startDate) return false;
+      if (dateRange.endDate && patientDate > dateRange.endDate) return false;
+      
+      return true;
     } else {
       // filterType === "createdAt"
       const patientDate = patient.createdAt.split('T')[0];
-      return patientDate === selectedDate;
+      
+      // Check if patient date is within the range
+      if (dateRange.startDate && patientDate < dateRange.startDate) return false;
+      if (dateRange.endDate && patientDate > dateRange.endDate) return false;
+      
+      return true;
     }
   });
 
@@ -185,7 +199,7 @@ const Patients = () => {
               <p className="text-sm text-gray-600">
                 {filterType === "consultation" 
                   ? `Showing ${filteredPatients.length} patients with active consultations`
-                  : `Showing ${filteredPatients.length} of ${patients.length} patients by ${filterType === "lastVisit" ? "last visit" : "registration"} date: ${selectedDate}`
+                  : `Showing ${filteredPatients.length} of ${patients.length} patients by ${filterType === "lastVisit" ? "last visit" : "registration"} date${dateRange.startDate === dateRange.endDate ? `: ${dateRange.startDate}` : ` range: ${dateRange.startDate} to ${dateRange.endDate}`}`
                 }
               </p>
             )}
@@ -220,23 +234,43 @@ const Patients = () => {
                 </SelectContent>
               </Select>
               {filterType !== "consultation" && filterType !== "all" && (
-                <>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">From:</span>
                   <input
                     type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
+                    value={dateRange.startDate}
+                    onChange={e => setDateRange({ ...dateRange, startDate: e.target.value })}
+                    className="border rounded px-2 py-1"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <span className="text-sm text-gray-600">To:</span>
+                  <input
+                    type="date"
+                    value={dateRange.endDate}
+                    onChange={e => setDateRange({ ...dateRange, endDate: e.target.value })}
                     className="border rounded px-2 py-1"
                     max={new Date().toISOString().split('T')[0]}
                   />
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                    onClick={() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      setDateRange({ startDate: today, endDate: today });
+                    }}
                     className="text-xs"
                   >
                     Today
                   </Button>
-                </>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setDateRange({ startDate: "", endDate: "" })}
+                    className="text-xs"
+                  >
+                    Clear
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -463,7 +497,7 @@ const Patients = () => {
                 ? "Try adjusting your search criteria or add a new patient."
                 : filterType === "all"
                 ? "No patients found. Try adding a new patient."
-                : `No patients found by ${filterType === "lastVisit" ? "last visit" : "registration"} date (${selectedDate}). Try selecting a different date or filter type.`
+                : `No patients found by ${filterType === "lastVisit" ? "last visit" : "registration"} date${dateRange.startDate === dateRange.endDate ? ` (${dateRange.startDate})` : ` range (${dateRange.startDate} to ${dateRange.endDate})`}. Try selecting a different date range or filter type.`
               }
             </p>
           </CardContent>

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ConsultationStartDialog from "@/components/consultation/ConsultationStartDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X } from "lucide-react";
+import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -20,6 +20,7 @@ import AppointmentDialog from "@/components/appointments/AppointmentDialog";
 import RescheduleDialog from "@/components/appointments/RescheduleDialog";
 import TimeSlotSwapDialog from "@/components/appointments/TimeSlotSwapDialog";
 import FilterDialog from "@/components/appointments/FilterDialog";
+import VitalsDialog from "@/components/appointments/VitalsDialog";
 import api from "@/lib/api";
 import { 
   AlertDialog,
@@ -71,6 +72,8 @@ const Appointments = () => {
   const [appointmentToCancel, setAppointmentToCancel] = useState<Appointment | null>(null);
   const [consultationDialogOpen, setConsultationDialogOpen] = useState(false);
   const [selectedAppointmentForConsultation, setSelectedAppointmentForConsultation] = useState<Appointment | null>(null);
+  const [vitalsDialogOpen, setVitalsDialogOpen] = useState(false);
+  const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState<Appointment | null>(null);
 
   // Use appointment settings hook
   const { 
@@ -202,6 +205,11 @@ const Appointments = () => {
   const handleStartConsultationClick = (appointment: Appointment) => {
     setSelectedAppointmentForConsultation(appointment);
     setConsultationDialogOpen(true);
+  };
+
+  const handleRecordVitalsClick = (appointment: Appointment) => {
+    setSelectedAppointmentForVitals(appointment);
+    setVitalsDialogOpen(true);
   };
 
   const handleConsultationStarted = (appointmentData: Appointment) => {
@@ -548,6 +556,15 @@ const Appointments = () => {
                       {appointment.status === 'Confirmed' && (
                         <>
                           <Button 
+                            size="sm"
+                            variant="outline"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            onClick={() => handleRecordVitalsClick(appointment)}
+                          >
+                            <Heart className="h-4 w-4 mr-1" />
+                            Record Vitals
+                          </Button>
+                          <Button 
                             size="sm" 
                             className="bg-green-600 hover:bg-green-700"
                             onClick={() => handleStartConsultationClick(appointment)}
@@ -566,6 +583,15 @@ const Appointments = () => {
                       )}
                       {appointment.status === 'Urgent' && (
                         <>
+                          <Button 
+                            size="sm"
+                            variant="outline"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            onClick={() => handleRecordVitalsClick(appointment)}
+                          >
+                            <Heart className="h-4 w-4 mr-1" />
+                            Record Vitals
+                          </Button>
                           <Button 
                             size="sm" 
                             className="bg-red-600 hover:bg-red-700"
@@ -775,6 +801,20 @@ const Appointments = () => {
           )}
         </CardContent>
       </Card>
+      {vitalsDialogOpen && selectedAppointmentForVitals && (
+        <VitalsDialog
+          appointment={selectedAppointmentForVitals}
+          isOpen={vitalsDialogOpen}
+          onClose={() => {
+            setVitalsDialogOpen(false);
+            setSelectedAppointmentForVitals(null);
+          }}
+          onVitalsSaved={() => {
+            // Optionally refresh appointments or show success message
+            fetchAppointments();
+          }}
+        />
+      )}
     </div>
   );
 };

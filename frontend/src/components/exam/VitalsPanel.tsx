@@ -15,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal";
 import api from "@/lib/api";
 
 interface VitalRecord {
@@ -313,10 +314,6 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
   };
 
   const handleDeleteVitals = async (recordId: number) => {
-    if (!confirm("Are you sure you want to delete this vitals record?")) {
-      return;
-    }
-
     try {
       setDeleting(recordId);
       await api.delete(`/vitals/${recordId}`);
@@ -609,19 +606,26 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
                       >
                         <Edit2 className="h-3 w-3 text-blue-600" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteVitals(record.id)}
-                        disabled={saving || deleting === record.id}
-                        className="h-8 w-8 p-0 hover:bg-red-100"
-                      >
-                        {deleting === record.id ? (
-                          <div className="animate-spin rounded-full h-3 w-3 border border-red-600 border-t-transparent" />
-                        ) : (
-                          <Trash2 className="h-3 w-3 text-red-600" />
-                        )}
-                      </Button>
+                      <DeleteConfirmModal
+                        title="Delete Vitals Record"
+                        itemName="vitals record"
+                        description="This action cannot be undone. This will permanently delete the vitals record from the patient's medical history."
+                        onConfirm={() => handleDeleteVitals(record.id)}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={saving || deleting === record.id}
+                            className="h-8 w-8 p-0 hover:bg-red-100"
+                          >
+                            {deleting === record.id ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border border-red-600 border-t-transparent" />
+                            ) : (
+                              <Trash2 className="h-3 w-3 text-red-600" />
+                            )}
+                          </Button>
+                        }
+                      />
                     </div>
                     <div className="text-sm">
                       <div className="font-medium">

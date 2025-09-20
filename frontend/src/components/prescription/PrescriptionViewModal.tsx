@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Stethoscope, Download, Receipt, IndianRupee } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { useNavigate } from "react-router-dom"
 import api from "@/lib/api"
 
 interface PrescriptionViewModalProps {
@@ -64,6 +65,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
   } | null>(null)
   const [checkingBill, setCheckingBill] = useState(false)
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   useEffect(() => {
     const fetchHospitalInfo = async () => {
@@ -185,11 +187,11 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
             <div class="section">
               <div class="section-title">Medications:</div>
               ${
-                prescription.medications.length > 0
+                prescription.medications && prescription.medications.length > 0
                   ? `
                 <table class="medications-table">
                   <thead><tr><th>Medicine Name</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead>
-                  <tbody>${prescription.medications.map((med) => `<tr><td>${med.medicineName}</td><td>${med.dosage}</td><td>${med.frequency}</td><td>${med.duration}</td></tr>`).join("")}</tbody>
+                  <tbody>${(prescription.medications || []).map((med) => `<tr><td>${med.medicineName}</td><td>${med.dosage}</td><td>${med.frequency}</td><td>${med.duration}</td></tr>`).join("")}</tbody>
                 </table>`
                   : "<p>No medications prescribed</p>"
               }
@@ -227,8 +229,15 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
 
   const handleViewBill = () => {
     if (existingBill) {
-      // Navigate to billing page and open the specific bill
-      window.open(`/billing`, '_blank')
+      // Close the prescription modal first
+      onClose()
+      // Navigate to billing page
+      navigate('/billing', { 
+        state: { 
+          selectedBillId: existingBill.id,
+          billNumber: existingBill.billNumber 
+        } 
+      })
     }
   }
 
@@ -406,7 +415,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Medication:</label>
 
-                    {prescription.medications.length > 0 ? (
+                    {prescription.medications && prescription.medications.length > 0 ? (
                       <div className="border border-gray-300 rounded">
                         <table className="w-full">
                           <thead className="bg-gray-50">
@@ -418,7 +427,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                             </tr>
                           </thead>
                           <tbody>
-                            {prescription.medications.map((med) => (
+                            {(prescription.medications || []).map((med) => (
                               <tr key={med.id} className="border-t border-gray-200">
                                 <td className="px-2 py-1 text-sm">{med.medicineName}</td>
                                 <td className="px-2 py-1 text-sm">{med.dosage}</td>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useLocation } from "react-router-dom"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -109,6 +110,7 @@ const Billing = () => {
   const [selectedGst, setSelectedGst] = useState<GstRate | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Cash")
   const { toast } = useToast()
+  const location = useLocation()
 
   // Pagination and filtering
   const [currentPage, setCurrentPage] = useState(1)
@@ -143,6 +145,19 @@ const Billing = () => {
     fetchAnalytics()
     fetchGstRates()
   }, [selectedStatus, searchQuery, currentPage, dateRange])
+
+  // Handle navigation from Reports page
+  useEffect(() => {
+    if (location.state?.selectedBillId && bills.length > 0) {
+      const billToSelect = bills.find(bill => bill.id === location.state.selectedBillId)
+      if (billToSelect) {
+        // Just fetch the bill details but don't auto-open the invoice modal
+        fetchBillDetails(location.state.selectedBillId, false)
+        // Clear the navigation state to prevent re-triggering
+        window.history.replaceState({}, document.title)
+      }
+    }
+  }, [location.state, bills])
 
   const fetchBills = async () => {
     try {
@@ -180,10 +195,15 @@ const Billing = () => {
     }
   }
 
-  const fetchBillDetails = async (billId: number) => {
+  const fetchBillDetails = async (billId: number, autoOpenInvoice = false) => {
     try {
       const response = await api.get(`/billing/${billId}`)
       setSelectedBill(response.data)
+      
+      // Only auto-open invoice if explicitly requested
+      if (autoOpenInvoice) {
+        setIsInvoiceViewOpen(true)
+      }
       
       // Fetch consultation fee for the doctor
       if (response.data.prescription?.doctorName) {
@@ -299,7 +319,7 @@ const Billing = () => {
       fetchBills()
       fetchAnalytics()
       if (selectedBill && selectedBill.id === billId) {
-        fetchBillDetails(billId)
+        fetchBillDetails(billId, false)
       }
     } catch (error) {
       console.error("Error updating payment status:", error)
@@ -323,7 +343,7 @@ const Billing = () => {
       }
 
       await api.post(`/billing/${selectedBill.id}/${endpoint}`, payload)
-      fetchBillDetails(selectedBill.id)
+      fetchBillDetails(selectedBill.id, false) // Don't auto-open invoice after adding medicine
       fetchBills()
       setIsAddItemOpen(false)
       setItemForm({ type: "medicine", name: "", quantity: 1, unitPrice: 0, description: "", inventoryItemId: null })
@@ -345,7 +365,7 @@ const Billing = () => {
       }
 
       await api.post(`/billing/${selectedBill.id}/services`, payload)
-      fetchBillDetails(selectedBill.id)
+      fetchBillDetails(selectedBill.id, false) // Don't auto-open invoice after adding consultation
       fetchBills()
       setIsAddConsultationOpen(false)
     } catch (error) {
@@ -390,7 +410,7 @@ const Billing = () => {
 
     try {
       await api.delete(`/billing/${selectedBill.id}/items/${itemId}`)
-      fetchBillDetails(selectedBill.id)
+      fetchBillDetails(selectedBill.id, false) // Don't auto-open invoice after deleting item
       fetchBills()
     } catch (error) {
       console.error("Error deleting item:", error)
@@ -543,7 +563,7 @@ const Billing = () => {
             </CardContent>
           </Card>
         ) : (
-          bills.map((bill) => (
+          (bills || []).map((bill) => (
             <Card key={bill.id} className="hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -602,7 +622,7 @@ const Billing = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      fetchBillDetails(bill.id)
+                      fetchBillDetails(bill.id, false) // Don't auto-open invoice
                       setIsViewBillOpen(true)
                     }}
                   >
@@ -622,8 +642,7 @@ const Billing = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      fetchBillDetails(bill.id)
-                      setIsInvoiceViewOpen(true)
+                      fetchBillDetails(bill.id, true) // Auto-open invoice when explicitly requested
                     }}
                     className="flex items-center gap-2"
                   >
@@ -704,8 +723,8 @@ const Billing = () => {
               <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                 <div>
                   <Label className="text-sm font-medium">Patient</Label>
-                  <div className="text-lg">{selectedBill.patient.name}</div>
-                  <div className="text-sm text-gray-600">{selectedBill.patient.visibleId}</div>
+                  <div className="text-lg">{selectedBill.patient?.name || "N/A"}</div>
+                  <div className="text-sm text-gray-600">{selectedBill.patient?.visibleId || "N/A"}</div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Doctor</Label>
@@ -727,7 +746,7 @@ const Billing = () => {
                 <div>
                   <Label className="text-lg font-medium mb-3 block">Prescribed Medicines</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
-                    {selectedBill.prescription.medications.map((medication) => (
+                    {(selectedBill.prescription?.medications || []).map((medication) => (
                       <div key={medication.id} className="flex items-center justify-between p-2 border rounded-lg bg-blue-50">
                         <div className="flex-1">
                           <div className="font-medium text-sm">{medication.medicineName}</div>
@@ -781,7 +800,7 @@ const Billing = () => {
                 </div>
 
                 <div className="space-y-2">
-                  {selectedBill.items.map((item) => (
+                  {(selectedBill.items || []).map((item) => (
                     <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex-1">
                         <div className="font-medium">{item.itemName}</div>
@@ -811,17 +830,17 @@ const Billing = () => {
               <div className="p-4 bg-gray-50 rounded-lg space-y-2">
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
-                  <span>₹{selectedBill.subtotal.toLocaleString()}</span>
+                  <span>₹{(selectedBill.subtotal || 0).toLocaleString()}</span>
                 </div>
-                {selectedBill.gstAmount > 0 && (
+                {(selectedBill.gstAmount || 0) > 0 && (
                   <div className="flex justify-between">
                     <span>Total GST:</span>
-                    <span>₹{selectedBill.gstAmount.toLocaleString()}</span>
+                    <span>₹{(selectedBill.gstAmount || 0).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>Total Amount:</span>
-                  <span>₹{selectedBill.totalAmount.toLocaleString()}</span>
+                  <span>₹{(selectedBill.totalAmount || 0).toLocaleString()}</span>
                 </div>
               </div>
 
@@ -1003,7 +1022,7 @@ const Billing = () => {
                 />
                 {medicineSearch && availableMedicines.length > 0 && (
                   <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg">
-                    {availableMedicines.map((medicine: any) => (
+                    {(availableMedicines || []).map((medicine: any) => (
                       <div 
                         key={medicine.id} 
                         className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
@@ -1182,7 +1201,7 @@ const Billing = () => {
             <div>
               <h3 className="font-medium mb-4">Existing GST Rates</h3>
               <div className="space-y-2">
-                {gstRates.map((gst) => (
+                {(gstRates || []).map((gst) => (
                   <div key={gst.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex-1">
                       <div className="font-medium">{gst.name}</div>

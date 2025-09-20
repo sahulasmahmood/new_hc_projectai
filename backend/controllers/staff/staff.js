@@ -96,6 +96,7 @@ const createStaff = async (req, res) => {
       dateOfBirth,
       dateOfHiring,
       qualification,
+      registrationNumber,
       experience,
       phone,
       email,
@@ -157,8 +158,12 @@ const createStaff = async (req, res) => {
         employeeId,
         name,
         role,
-        departmentId: parseInt(departmentId),
-        shiftId: shiftId ? parseInt(shiftId) : null,
+        department: {
+          connect: { id: parseInt(departmentId) }
+        },
+        shiftTime: shiftId ? {
+          connect: { id: parseInt(shiftId) }
+        } : undefined,
         gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         dateOfHiring: dateOfHiring ? new Date(dateOfHiring) : null,
@@ -168,7 +173,6 @@ const createStaff = async (req, res) => {
         phone,
         email,
         status: status || 'On Duty',
-        shift,
         weekOff,
         consultationFee,
         digitalSignature
@@ -264,8 +268,12 @@ const updateStaff = async (req, res) => {
       data: {
         name,
         role,
-        departmentId: departmentId ? parseInt(departmentId) : undefined,
-        shiftId: shiftId ? parseInt(shiftId) : undefined,
+        department: departmentId ? {
+          connect: { id: parseInt(departmentId) }
+        } : undefined,
+        shiftTime: shiftId ? {
+          connect: { id: parseInt(shiftId) }
+        } : undefined,
         gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         dateOfHiring: dateOfHiring ? new Date(dateOfHiring) : undefined,
@@ -275,7 +283,6 @@ const updateStaff = async (req, res) => {
         phone,
         email,
         status,
-        shift,
         weekOff,
         consultationFee,
         digitalSignature

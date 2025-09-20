@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, Eye, Calendar, User, Search, Filter } from "lucide-react";
+import { FileText, Download, Eye, Calendar, User, Search, Filter, Receipt, IndianRupee, Loader2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import PrescriptionViewModal from "@/components/prescription/PrescriptionViewModal";
 
 
 const Reports = () => {
@@ -29,11 +32,27 @@ const Reports = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState("all");
   const [tab, setTab] = useState<'prescriptions'|'appointments'>("prescriptions");
+  
+  // Billing related states
+  const [billsMap, setBillsMap] = useState<Map<number, any>>(new Map());
+  const [loadingBills, setLoadingBills] = useState<Set<number>>(new Set());
+  const [generatingBills, setGeneratingBills] = useState<Set<number>>(new Set());
+  const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line
   }, [date, page, tab]);
+
+  useEffect(() => {
+    if (tab === 'prescriptions' && prescriptions.length > 0) {
+      checkExistingBills();
+    }
+  }, [prescriptions, tab]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,6 +72,84 @@ const Reports = () => {
       // handle error
     }
     setLoading(false);
+  };
+
+  const checkExistingBills = async () => {
+    const prescriptionIds = prescriptions.map(p => p.id);
+    if (prescriptionIds.length === 0) return;
+
+    try {
+      const response = await api.get('/billing', {
+        params: {
+          prescriptionIds: prescriptionIds.join(','),
+          limit: 100
+        }
+      });
+
+      const bills = response.data.bills || response.data || [];
+      const newBillsMap = new Map();
+      
+      bills.forEach((bill: any) => {
+        if (bill.prescriptionId) {
+          newBillsMap.set(bill.prescriptionId, bill);
+        }
+      });
+      
+      setBillsMap(newBillsMap);
+    } catch (error) {
+      console.error('Error checking existing bills:', error);
+    }
+  };
+
+  const handleGenerateBill = async (prescriptionId: number) => {
+    setGeneratingBills(prev => new Set([...prev, prescriptionId]));
+    
+    try {
+      const response = await api.post("/billing/create-from-prescription", {
+        prescriptionId: prescriptionId,
+      });
+
+      toast({
+        title: "Bill Generated",
+        description: `Bill ${response.data.billNumber} has been created successfully.`,
+      });
+
+      // Update the bills map with the new bill
+      setBillsMap(prev => new Map([...prev, [prescriptionId, response.data]]));
+      
+    } catch (error: any) {
+      console.error("Error generating bill:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Failed to generate bill";
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingBills(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(prescriptionId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleViewBill = async (prescriptionId: number) => {
+    const existingBill = billsMap.get(prescriptionId);
+    if (!existingBill) return;
+
+    // Navigate to billing page with the specific bill
+    navigate('/billing', { 
+      state: { 
+        selectedBillId: existingBill.id,
+        billNumber: existingBill.billNumber 
+      } 
+    });
+  };
+
+  const handleViewPrescription = (prescription: any) => {
+    setSelectedPrescription(prescription);
+    setShowPrescriptionModal(true);
   };
 
   const handleExport = async (type: 'csv'|'pdf') => {
@@ -224,17 +321,83 @@ const Reports = () => {
                         <th className="p-2 text-left">Doctor</th>
                         <th className="p-2 text-left">Complaint</th>
                         <th className="p-2 text-left">Date</th>
+                        <th className="p-2 text-left">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredPrescriptions.map((p) => (
-                        <tr key={p.id} className="border-b">
-                          <td className="p-2">{p.patientName} <span className="text-xs text-gray-400">({p.patientVisibleId})</span></td>
-                          <td className="p-2">{p.doctorName}</td>
-                          <td className="p-2">{p.chiefComplaint}</td>
-                          <td className="p-2">{formatDateTime(p.createdAt)}</td>
-                        </tr>
-                      ))}
+                      {filteredPrescriptions.map((p) => {
+                        const existingBill = billsMap.get(p.id);
+                        const isGenerating = generatingBills.has(p.id);
+                        const isLoadingBill = loadingBills.has(p.id);
+                        
+                        return (
+                          <tr key={p.id} className="border-b hover:bg-gray-50">
+                            <td className="p-2">
+                              <div>
+                                <span className="font-medium">{p.patientName}</span>
+                                <span className="text-xs text-gray-400 ml-1">({p.patientVisibleId})</span>
+                              </div>
+                            </td>
+                            <td className="p-2">{p.doctorName}</td>
+                            <td className="p-2">
+                              <div className="max-w-xs truncate" title={p.chiefComplaint}>
+                                {p.chiefComplaint}
+                              </div>
+                            </td>
+                            <td className="p-2">{formatDateTime(p.createdAt)}</td>
+                            <td className="p-2">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewPrescription(p)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  View
+                                </Button>
+                                
+                                {existingBill ? (
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="secondary" className="text-xs">
+                                      Bill: {existingBill.billNumber}
+                                    </Badge>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleViewBill(p.id)}
+                                      disabled={isLoadingBill}
+                                      className="flex items-center gap-1 text-green-600 border-green-200 hover:bg-green-50"
+                                    >
+                                      {isLoadingBill ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Receipt className="h-3 w-3" />
+                                      )}
+                                      View Bill
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleGenerateBill(p.id)}
+                                    disabled={isGenerating}
+                                    className="flex items-center gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                  >
+                                    {isGenerating ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <IndianRupee className="h-3 w-3" />
+                                    )}
+                                    {isGenerating ? "Generating..." : "Generate Bill"}
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -292,6 +455,21 @@ const Reports = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Prescription View Modal */}
+      {selectedPrescription && (
+        <PrescriptionViewModal
+          prescription={selectedPrescription}
+          onClose={() => {
+            setShowPrescriptionModal(false);
+            setSelectedPrescription(null);
+            // Refresh bills after prescription modal closes (in case bill was generated)
+            if (tab === 'prescriptions') {
+              checkExistingBills();
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

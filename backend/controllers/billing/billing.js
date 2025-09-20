@@ -325,7 +325,7 @@ const getBill = async (req, res) => {
 // Get all bills with filters
 const getAllBills = async (req, res) => {
   try {
-    const { status, patientId, prescriptionId, search, limit = 50, offset = 0, startDate, endDate } = req.query
+    const { status, patientId, prescriptionId, prescriptionIds, search, limit = 50, offset = 0, startDate, endDate } = req.query
 
     const where = {}
 
@@ -339,6 +339,14 @@ const getAllBills = async (req, res) => {
 
     if (prescriptionId) {
       where.prescriptionId = Number.parseInt(prescriptionId)
+    }
+
+    // Support multiple prescription IDs for bulk checking
+    if (prescriptionIds) {
+      const ids = prescriptionIds.split(',').map(id => Number.parseInt(id.trim())).filter(id => !isNaN(id))
+      if (ids.length > 0) {
+        where.prescriptionId = { in: ids }
+      }
     }
 
     if (search) {

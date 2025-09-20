@@ -35,10 +35,14 @@ const getAllPatients = async (req, res) => {
       }
     });
 
-    // Format lastVisit from the most recent appointment and find active consultation
+    // Format lastVisit from the most recent COMPLETED appointment and find active consultation
     const formattedPatients = patients.map(patient => {
       const now = new Date();
       const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+      
+      // Find the most recent completed appointment for lastVisit
+      const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
+      const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
       
       // Check for upcoming appointments (today or future)
       const upcomingAppointments = patient.appointments.filter(apt => {
@@ -49,7 +53,7 @@ const getAllPatients = async (req, res) => {
       
       return {
         ...patient,
-        lastVisit: patient.appointments[0]?.date || null,
+        lastVisit: lastCompletedVisit,
         activeAppointmentId: activeConsultation?.id || null,
         hasUpcomingAppointments: upcomingAppointments.length > 0,
         upcomingAppointmentCount: upcomingAppointments.length,
@@ -87,6 +91,10 @@ const getPatientById = async (req, res) => {
     // Find active consultation appointment
     const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
     
+    // Find the most recent completed appointment for lastVisit
+    const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
+    const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
+    
     // Check for upcoming appointments (today or future)
     const now = new Date();
     const upcomingAppointments = patient.appointments.filter(apt => {
@@ -98,7 +106,7 @@ const getPatientById = async (req, res) => {
     // Format patient data
     const formattedPatient = {
       ...patient,
-      lastVisit: patient.appointments[0]?.date || null,
+      lastVisit: lastCompletedVisit,
       activeAppointmentId: activeConsultation?.id || null,
       hasUpcomingAppointments: upcomingAppointments.length > 0,
       upcomingAppointmentCount: upcomingAppointments.length,

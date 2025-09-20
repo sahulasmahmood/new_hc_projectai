@@ -5,12 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { User, Clock, FileText, Eye, Lock } from "lucide-react";
+import { User, Clock, FileText, Eye, Lock, Heart } from "lucide-react";
 import VitalsPanel from "@/components/exam/VitalsPanel";
 import PatientInfo from "@/components/exam/PatientInfo";
 import NursePanel from "@/components/exam/NursePanel";
 import PrescriptionForm from "@/components/prescription/PrescriptionForm";
 import PrescriptionViewModal from "@/components/prescription/PrescriptionViewModal";
+import VitalsViewModal from "@/components/prescription/VitalsViewModal";
 import api from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -82,6 +83,8 @@ const PatientExam = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [showAllPrescriptions, setShowAllPrescriptions] = useState(false);
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [hasUnsavedData, setHasUnsavedData] = useState(false);
 
   // Fetch patient data
   useEffect(() => {
@@ -274,12 +277,36 @@ const PatientExam = () => {
                   </Card>
                 )}
 
+                {/* Auto-save indicator and View Vitals button */}
+                <div className="flex items-center justify-between">
+                  {/* Auto-save indicator */}
+                  {hasUnsavedData && (
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      <span className="text-blue-700">Form data auto-saved</span>
+                      <span className="text-blue-600 text-xs">Safe to switch tabs</span>
+                    </div>
+                  )}
+                  
+                  {/* View Vitals button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowVitalsModal(true)}
+                    className="flex items-center gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  >
+                    <Heart className="h-4 w-4" />
+                    View Vitals
+                  </Button>
+                </div>
+
                 {/* New Prescription Form - During active consultation */}
                 <PrescriptionForm 
                   patientId={selectedPatient.id} 
                   patientName={selectedPatient.name}
                   appointmentId={appointmentId || undefined}
                   onSave={handlePrescriptionSaved}
+                  onFormDataChange={setHasUnsavedData}
                 />
               </>
             ) : (
@@ -371,6 +398,15 @@ const PatientExam = () => {
           onClose={() => setSelectedPrescription(null)}
         />
       )}
+
+      {/* Vitals View Modal */}
+      <VitalsViewModal
+        isOpen={showVitalsModal}
+        onClose={() => setShowVitalsModal(false)}
+        patientId={selectedPatient.id}
+        patientName={selectedPatient.name}
+        appointmentId={appointmentId || undefined}
+      />
     </div>
   );
 };
