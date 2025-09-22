@@ -94,13 +94,24 @@ const ConsultationStartDialog = ({
       onClose();
     } catch (error: unknown) {
       console.error("Error starting consultation:", error);
-      toast({
-        title: "Error",
-        description:
-          (error as { response?: { data?: { error?: string } } })?.response
-            ?.data?.error || "Failed to start consultation",
-        variant: "destructive",
-      });
+      const errorResponse = (error as { response?: { data?: { error?: string, patientId?: number } } })?.response?.data;
+      const errorMessage = errorResponse?.error || "Failed to start consultation";
+      
+      // If it's a duplicate consultation error, provide more helpful guidance
+      if (errorMessage.includes("already has an active consultation")) {
+        toast({
+          title: "Active Consultation Found",
+          description: errorMessage + "\n\nTip: Use the 'Active Consultations' filter in the Patients page to find it.",
+          variant: "destructive",
+          duration: 8000, // Show longer for important message
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }

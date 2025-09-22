@@ -115,11 +115,151 @@ const Billing = () => {
   // Pagination and filtering
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  
+  // Initialize date range to today by default
+  const getToday = () => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  }
+  
   const [dateRange, setDateRange] = useState({
-    startDate: "",
-    endDate: ""
+    startDate: getToday(),
+    endDate: getToday()
   })
+  const [isCustomRangeSelected, setIsCustomRangeSelected] = useState(false)
   const itemsPerPage = 10
+
+  // Quick date selector functions
+  const setDateRangeQuick = (type: string) => {
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    
+    const last7Days = new Date(today)
+    last7Days.setDate(last7Days.getDate() - 7)
+    
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+    
+    const formatDate = (date: Date) => date.toISOString().split('T')[0]
+    
+    switch (type) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        })
+        break
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        })
+        break
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        })
+        break
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        })
+        break
+      case 'clear':
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        })
+        setIsCustomRangeSelected(false)
+        break
+      case 'custom':
+        // For custom, set flag to show custom inputs
+        setIsCustomRangeSelected(true)
+        break
+    }
+    
+    // Reset custom flag for non-custom selections
+    if (type !== 'custom') {
+      setIsCustomRangeSelected(false)
+    }
+    
+    setCurrentPage(1)
+  }
+
+  // Get user-friendly date range description
+  const getDateRangeDescription = () => {
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "All Time"
+    }
+    
+    const today = getToday()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "Today"
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "Yesterday"
+    }
+    
+    if (dateRange.startDate && dateRange.endDate) {
+      const start = new Date(dateRange.startDate).toLocaleDateString()
+      const end = new Date(dateRange.endDate).toLocaleDateString()
+      if (start === end) {
+        return start
+      }
+      return `${start} - ${end}`
+    }
+    
+    return "Custom Range"
+  }
+
+  // Get current date range type for dropdown selection
+  const getCurrentDateRangeType = () => {
+    // If custom is explicitly selected, return custom
+    if (isCustomRangeSelected) {
+      return "custom"
+    }
+    
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "clear"
+    }
+    
+    const today = getToday()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    
+    const last7Days = new Date()
+    last7Days.setDate(last7Days.getDate() - 7)
+    const last7DaysStr = last7Days.toISOString().split('T')[0]
+    
+    const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0]
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "today"
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "yesterday"
+    }
+    
+    if (dateRange.startDate === last7DaysStr && dateRange.endDate === today) {
+      return "last7days"
+    }
+    
+    if (dateRange.startDate === thisMonthStartStr && dateRange.endDate === today) {
+      return "thismonth"
+    }
+    
+    return "custom"
+  }
 
   // Add item form state
   const [itemForm, setItemForm] = useState({
@@ -452,31 +592,39 @@ const Billing = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-green-600">₹{analytics.totalRevenue.toLocaleString()}</div>
-            <div className="text-sm text-gray-600">Total Revenue</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-yellow-600">₹{analytics.pendingAmount.toLocaleString()}</div>
-            <div className="text-sm text-gray-600">Pending Amount</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">{analytics.totalBills}</div>
-            <div className="text-sm text-gray-600">Total Bills</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-purple-600">₹{analytics.totalGST.toLocaleString()}</div>
-            <div className="text-sm text-gray-600">GST Collected</div>
-          </CardContent>
-        </Card>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Analytics Overview</h2>
+          <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+            📊 {getDateRangeDescription()}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">₹{analytics.totalRevenue.toLocaleString()}</div>
+              <div className="text-sm text-gray-600">Total Revenue</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-yellow-600">₹{analytics.pendingAmount.toLocaleString()}</div>
+              <div className="text-sm text-gray-600">Pending Amount</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-blue-600">{analytics.totalBills}</div>
+              <div className="text-sm text-gray-600">Total Bills</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-purple-600">₹{analytics.totalGST.toLocaleString()}</div>
+              <div className="text-sm text-gray-600">GST Collected</div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Filters */}
@@ -510,37 +658,47 @@ const Billing = () => {
               </div>
             </div>
             
-            {/* Date Range Filter */}
-            <div className="flex flex-col md:flex-row gap-4 items-center">
+            {/* Compact Date Range Filter */}
+            <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-gray-500" />
                 <Label className="text-sm font-medium">Date Range:</Label>
+                <Select 
+                  value={getCurrentDateRangeType()} 
+                  onValueChange={(value) => setDateRangeQuick(value)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">📅 Today</SelectItem>
+                    <SelectItem value="yesterday">📅 Yesterday</SelectItem>
+                    <SelectItem value="last7days">📅 Last 7 Days</SelectItem>
+                    <SelectItem value="thismonth">📅 This Month</SelectItem>
+                    <SelectItem value="clear">📅 All Time</SelectItem>
+                    <SelectItem value="custom">📅 Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Custom Date Range Inputs - Show inline when custom is selected */}
+                {isCustomRangeSelected && (
+                  <div className="flex items-center gap-2 ml-4">
+                    <Input
+                      type="date"
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                      className="w-36"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <Input
+                      type="date"
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                      className="w-36"
+                    />
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
-                <Input
-                  type="date"
-                  value={dateRange.startDate}
-                  onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                  className="w-40"
-                />
-                <span className="text-gray-500 self-center">to</span>
-                <Input
-                  type="date"
-                  value={dateRange.endDate}
-                  onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                  className="w-40"
-                />
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDateRange({ startDate: "", endDate: "" })
-                  setCurrentPage(1)
-                }}
-                className="text-sm"
-              >
-                Clear Dates
-              </Button>
             </div>
           </div>
         </CardContent>

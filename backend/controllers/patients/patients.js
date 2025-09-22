@@ -2,6 +2,36 @@ const { PrismaClient } = require('../../generated/prisma');
 const { getPatientIdPrefix } = require('../../utils/patientIdGenerator');
 const prisma = new PrismaClient();      
 
+// Debug endpoint to check active consultations
+const getActiveConsultations = async (req, res) => {
+  try {
+    const activeAppointments = await prisma.appointment.findMany({
+      where: { status: 'Consultation Started' },
+      include: {
+        patient: {
+          select: { id: true, name: true, phone: true }
+        }
+      }
+    });
+    
+    res.json({
+      count: activeAppointments.length,
+      consultations: activeAppointments.map(apt => ({
+        appointmentId: apt.id,
+        patientId: apt.patientId,
+        patientName: apt.patient?.name || apt.patientName,
+        date: apt.date,
+        time: apt.time,
+        consultationStartTime: apt.consultationStartTime,
+        actualStartTime: apt.actualStartTime
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching active consultations:', error);
+    res.status(500).json({ error: 'Failed to fetch active consultations' });
+  }
+};
+
 // GET all patients with optional search
 const getAllPatients = async (req, res) => {
   try {
@@ -36,31 +66,59 @@ const getAllPatients = async (req, res) => {
     });
 
     // Format lastVisit from the most recent COMPLETED appointment and find active consultation
-    const formattedPatients = patients.map(patient => {
+    const formattedPatients = await Promise.all(patients.map(async patient => {
       const now = new Date();
-      const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+      
+      // First check in the loaded appointments
+      let activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+      
+      // If not found in recent appointments, specifically query for active consultation
+      if (!activeConsultation) {
+        activeConsultation = await prisma.appointment.findFirst({
+          where: {
+            patientId: patient.id,
+            status: 'Consultation Started'
+          }
+        });
+      }
       
       // Find the most recent completed appointment for lastVisit
       const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
       const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
       
-      // Check for upcoming appointments (today or future)
+      // Check for upcoming appointments (today or future) - excluding active consultations
       const upcomingAppointments = patient.appointments.filter(apt => {
         const appointmentDate = new Date(apt.date);
         return appointmentDate >= now.setHours(0, 0, 0, 0) && 
-               ['Confirmed', 'Urgent', 'Consultation Started'].includes(apt.status);
+               ['Confirmed', 'Urgent'].includes(apt.status); // Removed 'Consultation Started' from here
       });
+      
+      // Add active consultation to upcoming count if it exists (regardless of date)
+      const totalUpcoming = upcomingAppointments.length + (activeConsultation ? 1 : 0);
       
       return {
         ...patient,
         lastVisit: lastCompletedVisit,
         activeAppointmentId: activeConsultation?.id || null,
-        hasUpcomingAppointments: upcomingAppointments.length > 0,
-        upcomingAppointmentCount: upcomingAppointments.length,
+        consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
+        consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+        hasUpcomingAppointments: totalUpcoming > 0,
+        upcomingAppointmentCount: totalUpcoming,
         appointments: undefined, // Remove appointments from response
         medicalReportCount: patient.medicalReports.length
       };
-    });
+    }));
+
+      // Debug: Log patients with active consultations
+    const patientsWithActiveConsultations = formattedPatients.filter(p => p.consultationStatus === 'active');
+    if (patientsWithActiveConsultations.length > 0) {
+      console.log('Patients with active consultations:', patientsWithActiveConsultations.map(p => ({
+        id: p.id,
+        name: p.name,
+        consultationStatus: p.consultationStatus,
+        activeAppointmentId: p.activeAppointmentId
+      })));
+    }
 
     res.json(formattedPatients);
   } catch (error) {
@@ -78,7 +136,7 @@ const getPatientById = async (req, res) => {
       include: {
         appointments: {
           orderBy: { date: 'desc' },
-          take: 1
+          take: 20 // Get more appointments to find active consultation
         },
         medicalReports: true
       }
@@ -89,27 +147,42 @@ const getPatientById = async (req, res) => {
     }
 
     // Find active consultation appointment
-    const activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+    let activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+    
+    // If not found in recent appointments, specifically query for active consultation
+    if (!activeConsultation) {
+      activeConsultation = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          status: 'Consultation Started'
+        }
+      });
+    }
     
     // Find the most recent completed appointment for lastVisit
     const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
     const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
     
-    // Check for upcoming appointments (today or future)
+    // Check for upcoming appointments (today or future) - excluding active consultations
     const now = new Date();
     const upcomingAppointments = patient.appointments.filter(apt => {
       const appointmentDate = new Date(apt.date);
       return appointmentDate >= now.setHours(0, 0, 0, 0) && 
-             ['Confirmed', 'Urgent', 'Consultation Started'].includes(apt.status);
+             ['Confirmed', 'Urgent'].includes(apt.status); // Removed 'Consultation Started' from here
     });
+    
+    // Add active consultation to upcoming count if it exists (regardless of date)
+    const totalUpcoming = upcomingAppointments.length + (activeConsultation ? 1 : 0);
     
     // Format patient data
     const formattedPatient = {
       ...patient,
       lastVisit: lastCompletedVisit,
       activeAppointmentId: activeConsultation?.id || null,
-      hasUpcomingAppointments: upcomingAppointments.length > 0,
-      upcomingAppointmentCount: upcomingAppointments.length,
+      consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
+      consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+      hasUpcomingAppointments: totalUpcoming > 0,
+      upcomingAppointmentCount: totalUpcoming,
       appointments: undefined, // Remove appointments from response
       medicalReportCount: patient.medicalReports.length,
       medicalReports: patient.medicalReports // Keep medical reports for consultation
@@ -421,5 +494,6 @@ module.exports = {
   updatePatient,
   deletePatient,
   updateABHAStatus,
-  getPatientByPhone
+  getPatientByPhone,
+  getActiveConsultations
 };

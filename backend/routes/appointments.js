@@ -9,7 +9,8 @@ const {
   rescheduleAppointment,
   swapAppointments,
   validateConsultationStartTiming,
-  startConsultation
+  startConsultation,
+  abortConsultation
 } = require('../controllers/appointments/appointments');
 const { checkSlotAvailability } = require('../controllers/appointments/availability');
 
@@ -42,5 +43,8 @@ router.get('/appointments/:id/validate-start', validateConsultationStartTiming);
 
 // Start consultation with proper time handling
 router.post('/appointments/:id/start-consultation', startConsultation);
+
+// Abort active consultation
+router.post('/appointments/:id/abort-consultation', abortConsultation);
 
 module.exports = router;

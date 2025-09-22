@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope, Clock } from "lucide-react";
+import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope, Clock, X, AlertTriangle } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -20,6 +20,17 @@ import PatientFormDialog from "@/components/patients/PatientFormDialog";
 import PatientDetailsDialog from "@/components/patients/PatientDetailsDialog";
 import ScheduleDialog from "@/components/patients/ScheduleDialog";
 import MedicalRecordsDialog from "@/components/patients/MedicalRecordsDialog";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import api from "@/lib/api";
 
 interface Patient {
@@ -49,10 +60,14 @@ interface Patient {
 }
 
 const Patients = () => {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [abortConsultationDialogOpen, setAbortConsultationDialogOpen] = useState(false);
+  const [patientToAbortConsultation, setPatientToAbortConsultation] = useState<Patient | null>(null);
+  const [abortReason, setAbortReason] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [patientsPerPage] = useState(9); // 3x3 grid
   const [dateRange, setDateRange] = useState(() => {
@@ -186,6 +201,69 @@ const Patients = () => {
     setCurrentPage(page);
     // Scroll to top when changing pages
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAbortConsultationClick = (patient: Patient) => {
+    setPatientToAbortConsultation(patient);
+    setAbortReason(""); // Reset reason
+    setAbortConsultationDialogOpen(true);
+  };
+
+  const handleAbortConsultation = async (patientId: number, appointmentId?: number, reason?: string) => {
+    try {
+      // Find the active appointment for this patient
+      let activeAppointmentId = appointmentId;
+      
+      if (!activeAppointmentId) {
+        // If no appointment ID provided, we need to find the active appointment
+        // This would require an API call to get patient's active appointment
+        // For now, we'll show an error
+        toast({
+          title: "Error",
+          description: "Unable to find active appointment for this patient.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const response = await api.post(`/appointments/${activeAppointmentId}/abort-consultation`, {
+        reason: reason || 'Aborted by staff from patient management'
+      });
+      
+      // Update the patient in the local state
+      setPatients(prev => prev.map(p => 
+        p.id === patientId 
+          ? { ...p, consultationStatus: null, consultationStartTime: undefined, activeAppointmentId: undefined }
+          : p
+      ));
+      
+      toast({
+        title: "Consultation Aborted",
+        description: `Active consultation for ${patientToAbortConsultation?.name} has been aborted successfully.`
+      });
+      
+      // Refresh patients data to get updated state
+      fetchPatients();
+    } catch (error: unknown) {
+      let errorMessage = "Failed to abort consultation";
+      if (error && typeof error === 'object' && 'response' in error && error.response && typeof error.response === 'object' && 'data' in error.response && error.response.data && typeof error.response.data === 'object' && 'error' in error.response.data) {
+        errorMessage = (error.response.data as { error?: string }).error || errorMessage;
+      }
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleConfirmAbortConsultation = async () => {
+    if (patientToAbortConsultation) {
+      await handleAbortConsultation(patientToAbortConsultation.id, patientToAbortConsultation.activeAppointmentId, abortReason);
+      setAbortConsultationDialogOpen(false);
+      setPatientToAbortConsultation(null);
+      setAbortReason("");
+    }
   };
 
   return (
@@ -427,6 +505,17 @@ const Patients = () => {
                         </Button>
                       }
                     />
+                    {patient.consultationStatus === 'active' && (
+                      <Button 
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 border-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => handleAbortConsultationClick(patient)}
+                        title="Abort Consultation"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                     {/* ABHA Actions */}
                     {patient.abhaId && (
                       <ABHAModal
@@ -497,11 +586,61 @@ const Patients = () => {
                 ? "Try adjusting your search criteria or add a new patient."
                 : filterType === "all"
                 ? "No patients found. Try adding a new patient."
+                : filterType === "consultation"
+                ? "No patients with active consultations found. If you expected to see active consultations, they may have been completed or aborted."
                 : `No patients found by ${filterType === "lastVisit" ? "last visit" : "registration"} date${dateRange.startDate === dateRange.endDate ? ` (${dateRange.startDate})` : ` range (${dateRange.startDate} to ${dateRange.endDate})`}. Try selecting a different date range or filter type.`
               }
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Abort Consultation Dialog */}
+      {abortConsultationDialogOpen && patientToAbortConsultation && (
+        <AlertDialog open={abortConsultationDialogOpen} onOpenChange={setAbortConsultationDialogOpen}>
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+                Abort Active Consultation
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to abort the active consultation for <strong>{patientToAbortConsultation.name}</strong>?
+                <br />
+                <br />
+                This will mark the consultation as aborted and clear the patient's active consultation status.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-4">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">
+                Reason for aborting (optional):
+              </label>
+              <Select value={abortReason} onValueChange={setAbortReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reason..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Patient didn't show up">Patient didn't show up</SelectItem>
+                  <SelectItem value="Wrong patient selected">Wrong patient selected</SelectItem>
+                  <SelectItem value="Patient left early">Patient left early</SelectItem>
+                  <SelectItem value="Technical issues">Technical issues</SelectItem>
+                  <SelectItem value="Emergency interruption">Emergency interruption</SelectItem>
+                  <SelectItem value="Staff error">Staff error</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep Consultation Active</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleConfirmAbortConsultation}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Yes, Abort Consultation
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

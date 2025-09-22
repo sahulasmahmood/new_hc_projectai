@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Edit } from "lucide-react";
+import { Plus, Trash2, Edit, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MedicineSearch from "@/components/prescription/MedicineSearch";
 import api from "@/lib/api";
@@ -409,8 +409,136 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
               Medication:
             </label>
             
+            {/* Medicine Search & Add Form - Moved to top for quick access */}
+            <div className="p-4 bg-gray-50 rounded border mb-4">
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-700 mb-2">
+                  🔍 Search Items from Inventory
+                </label>
+                <MedicineSearch
+                  onSelectMedicine={(item) => {
+                    // Only set the item name, doctor customizes the rest
+                    setNewMedication({
+                      name: item.name,
+                      dosage: "",
+                      frequency: "",
+                      duration: ""
+                    });
+                  }}
+                  placeholder="Type item name (medicines, syringes, devices, etc.)..."
+                  doctorId={selectedDoctorId}
+                />
+              </div>
+              
+              {/* Medicine Details Form - Doctor Customizes Everything */}
+              <div className="mt-3">
+                <div className="text-xs font-medium text-gray-700 mb-2">
+                  {editingMedication ? '✏️ Editing Medicine' : '📝 Enter Medicine Details'}
+                </div>
+                <div className={`grid grid-cols-1 md:grid-cols-5 gap-2 p-3 border rounded ${
+                  editingMedication ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
+                }`}>
+                  <Input
+                    placeholder="Medicine name"
+                    value={newMedication.name}
+                    onChange={(e) => setNewMedication({...newMedication, name: e.target.value})}
+                    className="text-sm"
+                  />
+                  <Input
+                    placeholder="Dosage (e.g., 500mg)"
+                    value={newMedication.dosage}
+                    onChange={(e) => setNewMedication({...newMedication, dosage: e.target.value})}
+                    className="text-sm"
+                  />
+                  
+                  {/* Frequency Dropdown for speed and accuracy */}
+                  <Select 
+                    value={newMedication.frequency} 
+                    onValueChange={(value) => setNewMedication({...newMedication, frequency: value})}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Once daily">Once daily</SelectItem>
+                      <SelectItem value="Twice daily">Twice daily</SelectItem>
+                      <SelectItem value="Three times daily">Three times daily</SelectItem>
+                      <SelectItem value="Four times daily">Four times daily</SelectItem>
+                      <SelectItem value="Every 4 hours">Every 4 hours</SelectItem>
+                      <SelectItem value="Every 6 hours">Every 6 hours</SelectItem>
+                      <SelectItem value="Every 8 hours">Every 8 hours</SelectItem>
+                      <SelectItem value="Every 12 hours">Every 12 hours</SelectItem>
+                      <SelectItem value="Before meals">Before meals</SelectItem>
+                      <SelectItem value="After meals">After meals</SelectItem>
+                      <SelectItem value="At bedtime">At bedtime</SelectItem>
+                      <SelectItem value="As needed">As needed</SelectItem>
+                    {/*   <SelectItem value="When required">When required</SelectItem> */}
+                    </SelectContent>
+                  </Select>
+                  
+                  {/* Duration with number + unit for better UX */}
+                  <div className="flex gap-1">
+                    <Input
+                      type="number"
+                      placeholder="5"
+                      value={newMedication.duration.split(' ')[0] || ''}
+                      onChange={(e) => {
+                        const number = e.target.value;
+                        const unit = newMedication.duration.split(' ')[1] || 'days';
+                        setNewMedication({...newMedication, duration: number ? `${number} ${unit}` : ''});
+                      }}
+                      className="text-sm w-16"
+                      min="1"
+                    />
+                    <Select 
+                      value={newMedication.duration.split(' ')[1] || 'days'} 
+                      onValueChange={(unit) => {
+                        const number = newMedication.duration.split(' ')[0] || '1';
+                        setNewMedication({...newMedication, duration: `${number} ${unit}`});
+                      }}
+                    >
+                      <SelectTrigger className="text-sm w-20">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="days">days</SelectItem>
+                        <SelectItem value="weeks">weeks</SelectItem>
+                        <SelectItem value="months">months</SelectItem>
+                        <SelectItem value="doses">doses</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="flex gap-1">
+                    <Button 
+                      onClick={editingMedication ? updateMedication : addMedication} 
+                      size="sm" 
+                      className="px-3"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      {editingMedication ? 'Update' : 'Add'}
+                    </Button>
+                    {editingMedication && (
+                      <Button 
+                        onClick={cancelEdit} 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 hover:bg-red-50"
+                        title="Cancel editing"
+                      >
+                        <X className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  💡 Search to find any item from inventory, then quickly select frequency and duration from dropdowns for speed and accuracy
+                </div>
+              </div>
+            </div>
+
             {/* Medication Table */}
-            <div className="border border-gray-300 rounded mb-3">
+            <div className="border border-gray-300 rounded">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
@@ -455,94 +583,12 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                   {medications.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-3 py-4 text-center text-gray-500 text-sm">
-                        No medications added yet
+                        No medications added yet. Use the form above to add medicines.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </div>
-
-            {/* Medicine Search & Add Form */}
-            <div className="p-4 bg-gray-50 rounded border">
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  🔍 Search Items from Inventory
-                </label>
-                <MedicineSearch
-                  onSelectMedicine={(item) => {
-                    // Only set the item name, doctor customizes the rest
-                    setNewMedication({
-                      name: item.name,
-                      dosage: "",
-                      frequency: "",
-                      duration: ""
-                    });
-                  }}
-                  placeholder="Type item name (medicines, syringes, devices, etc.)..."
-                  doctorId={selectedDoctorId}
-                />
-              </div>
-              
-              {/* Medicine Details Form - Doctor Customizes Everything */}
-              <div className="mt-3">
-                <div className="text-xs font-medium text-gray-700 mb-2">
-                  {editingMedication ? '✏️ Editing Medicine' : '📝 Enter Medicine Details'}
-                </div>
-                <div className={`grid grid-cols-1 md:grid-cols-4 gap-2 p-3 border rounded ${
-                  editingMedication ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
-                }`}>
-                  <Input
-                    placeholder="Medicine name"
-                    value={newMedication.name}
-                    onChange={(e) => setNewMedication({...newMedication, name: e.target.value})}
-                    className="text-sm"
-                  />
-                  <Input
-                    placeholder="Dosage (e.g., 500mg)"
-                    value={newMedication.dosage}
-                    onChange={(e) => setNewMedication({...newMedication, dosage: e.target.value})}
-                    className="text-sm"
-                  />
-                  <Input
-                    placeholder="Frequency (e.g., Twice daily)"
-                    value={newMedication.frequency}
-                    onChange={(e) => setNewMedication({...newMedication, frequency: e.target.value})}
-                    className="text-sm"
-                  />
-                  <div className="flex gap-1">
-                    <Input
-                      placeholder="Duration (e.g., 5 days)"
-                      value={newMedication.duration}
-                      onChange={(e) => setNewMedication({...newMedication, duration: e.target.value})}
-                      className="text-sm"
-                    />
-                    <div className="flex gap-1">
-                      <Button 
-                        onClick={editingMedication ? updateMedication : addMedication} 
-                        size="sm" 
-                        className="px-3"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        {editingMedication ? 'Update' : 'Add'}
-                      </Button>
-                      {editingMedication && (
-                        <Button 
-                          onClick={cancelEdit} 
-                          variant="outline" 
-                          size="sm" 
-                          className="px-2"
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  💡 Search to find any item from inventory (medicines, syringes, devices, etc.), then enter your custom dosage, frequency, and duration
-                </div>
-              </div>
             </div>
           </div>
 
@@ -599,7 +645,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                       <img 
                         src={selectedDoctor.digitalSignature} 
                         alt="Doctor Signature" 
-                        className="h-12 border border-gray-200 bg-white rounded"
+                        className="h-12 max-w-[200px] object-contain border border-gray-200 bg-white rounded"
                       />
                       <div className="text-xs text-green-600">✓ Digital signature</div>
                     </div>

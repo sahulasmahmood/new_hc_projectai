@@ -221,13 +221,13 @@ const StaffSettingsManagement = () => {
       </CardHeader>
       <CardContent className="space-y-10">
         {/* Departments Section */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+        <div className="bg-gradient-to-br from-medical-50 to-medical-100 rounded-xl p-6 border border-medical-200">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-lg bg-blue-500 text-white">
+            <div className="p-2 rounded-lg bg-medical-500 text-white">
               <Building className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-gray-800">Departments</h2>
-            <div className="ml-auto bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
+            <div className="ml-auto bg-medical-100 text-medical-700 px-3 py-1 rounded-full text-sm font-medium">
               {departments.length} Total
             </div>
           </div>
@@ -238,11 +238,10 @@ const StaffSettingsManagement = () => {
                 placeholder="Enter department name (e.g., Cardiology, Emergency)"
                 value={newDepartment}
                 onChange={(e) => setNewDepartment(e.target.value)}
-                className="flex-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                className="flex-1 border-gray-300 focus:border-medical-500 focus:ring-medical-500"
               />
               <Button
-                className="text-white px-6"
-                style={{ backgroundColor: '#3a72ec' }}
+                className="bg-medical-500 hover:bg-medical-600 text-white px-6"
                 onClick={handleSaveDepartment}
                 disabled={!newDepartment.trim()}
               >
@@ -286,12 +285,12 @@ const StaffSettingsManagement = () => {
                     <tr
                       key={department.id}
                       className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${
-                        editingDepartment?.id === department.id ? 'bg-blue-50' : ''
+                        editingDepartment?.id === department.id ? 'bg-medical-50' : ''
                       }`}
                     >
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-medium">
+                          <div className="w-8 h-8 rounded-full bg-medical-100 text-medical-600 flex items-center justify-center text-sm font-medium">
                             {index + 1}
                           </div>
                           <span className="font-medium text-gray-800">{department.name}</span>
@@ -302,7 +301,7 @@ const StaffSettingsManagement = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-8 w-8 p-0 text-gray-400 hover:text-blue-500 hover:bg-blue-50"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-medical-500 hover:bg-medical-50"
                             onClick={() => handleEditDepartment(department)}
                           >
                             <PenSquare className="w-4 h-4" />
@@ -384,8 +383,7 @@ const StaffSettingsManagement = () => {
           </div>
           <div className="flex justify-center gap-3">
             <Button
-              className="w-44 text-white"
-              style={{ backgroundColor: '#3a72ec' }}
+              className="w-44 bg-medical-500 hover:bg-medical-600 text-white"
               onClick={handleSaveShift}
               disabled={!newShift.name.trim() || !newShift.startTime || !newShift.endTime}
             >
@@ -434,7 +432,7 @@ const StaffSettingsManagement = () => {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-blue-500 mr-2"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-medical-500 mr-2"
                         onClick={() => handleEditShift(shift)}
                       >
                         <PenSquare className="w-4 h-4" />

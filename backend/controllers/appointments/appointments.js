@@ -627,6 +627,25 @@ const startConsultation = async (req, res) => {
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
+
+    // Check if patient already has an active consultation
+    if (appointment.patientId) {
+      const activeConsultation = await prisma.appointment.findFirst({
+        where: {
+          patientId: appointment.patientId,
+          status: 'Consultation Started',
+          id: { not: parseInt(id) } // Exclude current appointment
+        }
+      });
+
+      if (activeConsultation) {
+        return res.status(400).json({ 
+          error: 'This patient already has an active consultation. Go to Patients page → Filter by "Active Consultations" to find and manage it.',
+          activeAppointmentId: activeConsultation.id,
+          patientId: appointment.patientId
+        });
+      }
+    }
     
     // Get appointment date in YYYY-MM-DD format
     const appointmentDate = appointment.date.toISOString().split('T')[0];
@@ -703,6 +722,62 @@ const startConsultation = async (req, res) => {
   }
 };
 
+// Abort active consultation
+const abortConsultation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'Aborted by staff' } = req.body;
+    
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: parseInt(id) }
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    // Check if consultation can be aborted
+    if (appointment.status !== 'Consultation Started') {
+      return res.status(400).json({ 
+        error: `Cannot abort consultation. Current status is "${appointment.status}". Only active consultations can be aborted.` 
+      });
+    }
+    
+    // Update appointment status to aborted
+    const updatedAppointment = await prisma.appointment.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: 'Aborted',
+        notes: appointment.notes ? 
+          `${appointment.notes}\n\nAbort reason: ${reason}` : 
+          `Abort reason: ${reason}`,
+        actualEndTime: new Date() // Record when it was aborted
+      }
+    });
+    
+    // Clear patient consultation status
+    if (appointment.patientId) {
+      await prisma.patient.update({
+        where: { id: appointment.patientId },
+        data: {
+          consultationStatus: null,
+          consultationStartTime: null,
+          actualConsultationStartTime: null
+        }
+      });
+    }
+    
+    res.json({
+      appointment: updatedAppointment,
+      message: 'Consultation aborted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error aborting consultation:', error);
+    res.status(500).json({ error: 'Failed to abort consultation' });
+  }
+};
+
 module.exports = {
   getAllAppointments,
   getAppointment,
@@ -712,5 +787,6 @@ module.exports = {
   rescheduleAppointment,
   swapAppointments,
   validateConsultationStartTiming,
-  startConsultation
+  startConsultation,
+  abortConsultation
 };
