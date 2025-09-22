@@ -16,6 +16,7 @@ const getAllEmergencyCases = async (req, res) => {
     const transformed = cases.map((c) => ({
       id: c.id,
       caseId: `EM${c.id.toString().padStart(3, '0')}`,
+      patientId: c.patientId, // Add patientId for vitals saving
       patientName: c.patient?.name || '',
       age: c.patient?.age || '',
       gender: c.patient?.gender || '',
@@ -58,6 +59,7 @@ const getEmergencyCaseById = async (req, res) => {
     const transformed = {
       id: c.id,
       caseId: `EM${c.id.toString().padStart(3, '0')}`,
+      patientId: c.patientId, // Add patientId for vitals saving
       patientName: c.patient?.name || '',
       age: c.patient?.age || '',
       gender: c.patient?.gender || '',

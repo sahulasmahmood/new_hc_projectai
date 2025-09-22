@@ -394,6 +394,41 @@ const Emergency = () => {
           spo2: vitalsSpO2,
         },
       });
+       // Also save to patient vitals history for medical records
+      if (vitalsCase?.patientId) {
+        // Parse blood pressure
+        const bpParts = vitalsBP.split('/');
+        const systolic = bpParts[0] ? parseInt(bpParts[0]) : null;
+        const diastolic = bpParts[1] ? parseInt(bpParts[1]) : null;
+        
+        // Parse other vitals
+        const heartRate = vitalsPulse ? parseInt(vitalsPulse) : null;
+        const temperature = vitalsTemp ? parseFloat(vitalsTemp) : null;
+        const oxygenSaturation = vitalsSpO2 ? parseInt(vitalsSpO2.replace('%', '')) : null;
+
+        const vitalsPayload = {
+          patientId: vitalsCase.patientId,
+          appointmentId: null, // Emergency vitals don't have specific appointment
+          bloodPressureSys: systolic,
+          bloodPressureDia: diastolic,
+          heartRate: heartRate,
+          temperature: temperature,
+          respiratoryRate: null,
+          oxygenSaturation: oxygenSaturation,
+          weight: null,
+          height: null,
+          recordedBy: "Emergency Staff",
+          notes: `Emergency vitals recorded for case ${vitalsCase.caseId}`
+        };
+
+        try {
+          // Save to patient vitals history
+          await api.post("/vitals", vitalsPayload);
+        } catch (vitalsError) {
+          console.error('Error saving vitals to patient history:', vitalsError);
+          // Don't throw error here - we still want to update the emergency case
+        }
+      }
       setVitalsDialogOpen(false);
       setVitalsCase(null);
       fetchCases();

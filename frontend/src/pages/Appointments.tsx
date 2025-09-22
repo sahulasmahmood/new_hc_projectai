@@ -564,13 +564,24 @@ const Appointments = () => {
                             <Heart className="h-4 w-4 mr-1" />
                             Record Vitals
                           </Button>
-                          <Button 
-                            size="sm" 
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleStartConsultationClick(appointment)}
-                          >
-                            Start Consultation
-                          </Button>
+                          {appointment.type === 'Emergency' ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => handleStartConsultationClick(appointment)}
+                            >
+                              <AlertTriangle className="h-4 w-4 mr-1" />
+                              Handle Urgent
+                            </Button>
+                          ) : (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => handleStartConsultationClick(appointment)}
+                            >
+                              Start Consultation
+                            </Button>
+                          )}
                           <Button 
                             size="sm"
                             variant="outline"
