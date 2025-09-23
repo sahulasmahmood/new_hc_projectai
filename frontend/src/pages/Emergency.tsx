@@ -7,14 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Plus, Clock, User, Phone, MapPin, Activity, Siren, Heart, Zap } from "lucide-react";
+import { AlertTriangle, Plus, Clock, User, Phone, Activity, Siren, Heart, Zap, ArrowRightLeft } from "lucide-react";
 import api from "@/lib/api";
-import axios, { AxiosError } from 'axios';
+import axios from "axios";
 
 const statusOptions = [
   "Waiting",
   "In Treatment",
-  "Admitted",
   "Discharged"
 ];
 
@@ -38,6 +37,12 @@ interface EmergencyCase {
     temp: string;
     spo2: string;
   };
+  // Transfer information
+  transferStatus?: string;
+  transferTo?: string;
+  transferReason?: string;
+  transferNotes?: string;
+  transferTime?: string;
 }
 
 const transferHospitals = [
@@ -94,6 +99,8 @@ const Emergency = () => {
     const today = new Date();
     return today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
   });
+  const [transferDetailsDialogOpen, setTransferDetailsDialogOpen] = useState(false);
+  const [selectedTransferCase, setSelectedTransferCase] = useState<EmergencyCase | null>(null);
 
   const fetchCases = async () => {
     setLoading(true);
@@ -248,7 +255,7 @@ const Emergency = () => {
       case "In Treatment": return "bg-blue-100 text-blue-800";
       case "Waiting": return "bg-yellow-100 text-yellow-800";
       case "Discharged": return "bg-green-100 text-green-800";
-      case "Admitted": return "bg-purple-100 text-purple-800";
+      case "Transferred": return "bg-orange-100 text-orange-800";
       default: return "bg-gray-100 text-gray-800";
     }
   };
@@ -352,7 +359,6 @@ const Emergency = () => {
     setTransferLoading(true);
     setTransferError(null);
     try {
-      // Placeholder API call (replace with your backend endpoint)
       await api.put(`/emergency/${transferCase?.id}/transfer`, {
         transferTo: transferHospital,
         transferReason,
@@ -370,6 +376,11 @@ const Emergency = () => {
     } finally {
       setTransferLoading(false);
     }
+  };
+
+  const handleViewTransferDetails = (case_: EmergencyCase) => {
+    setSelectedTransferCase(case_);
+    setTransferDetailsDialogOpen(true);
   };
 
   const handleOpenVitalsDialog = (case_: EmergencyCase) => {
@@ -753,19 +764,56 @@ const Emergency = () => {
                       </div>
                     </div>
 
+                    {/* Transfer Status Display */}
+                    {case_.transferStatus === 'Transferred' && (
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge className="bg-blue-100 text-blue-800">Transferred</Badge>
+                          <span className="text-sm text-blue-700 font-medium">
+                            to {case_.transferTo}
+                          </span>
+                        </div>
+                        <div className="text-xs text-blue-600">
+                          <div>Reason: {case_.transferReason}</div>
+                          {case_.transferTime && (
+                            <div>Time: {new Date(case_.transferTime).toLocaleString()}</div>
+                          )}
+                          {case_.transferNotes && (
+                            <div>Notes: {case_.transferNotes}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4 flex gap-2">
-                      <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
-                        Update Status
-                      </Button>
+                      {/* Only show Update Status if not transferred */}
+                      {case_.transferStatus !== 'Transferred' && (
+                        <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
+                          Update Status
+                        </Button>
+                      )}
+                      
                       <Button variant="outline" size="sm" onClick={() => handleOpenFullChart(case_)}>
                         View Full Chart
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
-                        Transfer
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
-                        Add/Update Vitals
-                      </Button>
+                      
+                      {/* Transfer/View Transfer button logic */}
+                      {case_.transferStatus === 'Transferred' ? (
+                        <Button variant="outline" size="sm" onClick={() => handleViewTransferDetails(case_)}>
+                          View Transfer Details
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
+                          Transfer
+                        </Button>
+                      )}
+                      
+                      {/* Only show Add/Update Vitals if not transferred */}
+                      {case_.transferStatus !== 'Transferred' && (
+                        <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
+                          Add/Update Vitals
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -975,6 +1023,74 @@ const Emergency = () => {
             </div>
             {vitalsError && <div className="text-red-500 text-sm">{vitalsError}</div>}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Details Dialog */}
+      <Dialog open={transferDetailsDialogOpen} onOpenChange={setTransferDetailsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5 text-blue-600" />
+              Transfer Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTransferCase && (
+            <div className="space-y-4">
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Badge className="bg-blue-100 text-blue-800">
+                    {selectedTransferCase.caseId}
+                  </Badge>
+                  <span className="font-medium">{selectedTransferCase.patientName}</span>
+                </div>
+                
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">Transferred to:</span>
+                    <div className="mt-1">
+                      <Badge className="bg-green-100 text-green-800">
+                        {selectedTransferCase.transferTo}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Transfer Time:</span>
+                    <div className="text-gray-600">
+                      {selectedTransferCase.transferTime ? 
+                        new Date(selectedTransferCase.transferTime).toLocaleString() : 
+                        'N/A'
+                      }
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Reason:</span>
+                    <div className="text-gray-600">{selectedTransferCase.transferReason}</div>
+                  </div>
+                  
+                  {selectedTransferCase.transferNotes && (
+                    <div>
+                      <span className="font-medium text-gray-700">Notes:</span>
+                      <div className="text-gray-600">{selectedTransferCase.transferNotes}</div>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Original Complaint:</span>
+                    <div className="text-gray-600">{selectedTransferCase.chiefComplaint}</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end">
+                <Button onClick={() => setTransferDetailsDialogOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

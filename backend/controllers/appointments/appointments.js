@@ -282,6 +282,16 @@ const updateAppointment = async (req, res) => {
           lastVisit: new Date()
         }
       });
+
+      // Update emergency case status if this is an emergency appointment
+      if (appointment.emergencyCaseId) {
+        await prisma.emergencyCase.update({
+          where: { id: appointment.emergencyCaseId },
+          data: {
+            status: 'Discharged'
+          }
+        });
+      }
     }
 
     // console.log('Updated appointment:', appointment);
@@ -696,6 +706,16 @@ const startConsultation = async (req, res) => {
           actualConsultationStartTime: actualStartTime     // Actual start time
         }
       });
+
+      // Update emergency case status if this is an emergency appointment
+      if (appointment.emergencyCaseId) {
+        await prisma.emergencyCase.update({
+          where: { id: appointment.emergencyCaseId },
+          data: {
+            status: 'In Treatment'
+          }
+        });
+      }
     }
     
     // Format response with time information

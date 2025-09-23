@@ -1,18 +1,22 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import api from "@/lib/api";
 
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
-import { 
-  User, 
-  Calendar, 
+import {
+  User,
+  Calendar,
   Eye,
   Printer,
-  Share2
+  Share2,
+  ArrowRightLeft,
+  AlertTriangle
 } from "lucide-react";
 
 interface Visit {
@@ -27,19 +31,61 @@ interface Visit {
   actualEndTime?: string;
 }
 
+interface Transfer {
+  id: number;
+  caseId: string;
+  transferTo: string;
+  transferReason: string;
+  transferNotes?: string;
+  transferTime: string;
+  chiefComplaint: string;
+  triagePriority: string;
+  arrivalTime: string;
+}
+
 interface VisitsTabProps {
   visits: Visit[];
   patientName: string;
   patientId: string;
+  isEmergencyPatient?: boolean; // Add flag to check if patient was created from emergency
 }
 
-const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
+const VisitsTab = ({ visits, patientName, patientId, isEmergencyPatient = false }: VisitsTabProps) => {
   const [showAllVisits, setShowAllVisits] = useState(false);
-  
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [loadingTransfers, setLoadingTransfers] = useState(false);
+
   const RECENT_LIMIT = 5;
   const displayedVisits = showAllVisits ? visits : visits.slice(0, RECENT_LIMIT);
   const hasMoreVisits = visits.length > RECENT_LIMIT;
-  
+
+  // Fetch transfer history only for emergency patients
+  useEffect(() => {
+    const fetchTransferHistory = async () => {
+      try {
+        setLoadingTransfers(true);
+        console.log('Fetching transfer history for patient:', patientId);
+        const response = await api.get(`/emergency/patient/${patientId}/transfers`);
+        console.log('Transfer history response:', response.data);
+        setTransfers(response.data);
+      } catch (error) {
+        console.error('Error fetching transfer history:', error);
+        // Don't show error toast for missing transfers - it's optional data
+        setTransfers([]); // Set empty array on error
+      } finally {
+        setLoadingTransfers(false);
+      }
+    };
+
+    // Only fetch transfer history for emergency patients
+    if (patientId && isEmergencyPatient) {
+      fetchTransferHistory();
+    } else {
+      setTransfers([]); // Clear transfers for non-emergency patients
+      setLoadingTransfers(false);
+    }
+  }, [patientId, isEmergencyPatient]);
+
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -60,7 +106,7 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
       return false;
     }
   };
-  
+
   const handlePrintVisit = (visit: Visit) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -71,7 +117,7 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
       });
       return;
     }
-    
+
     const systemLogo = `
       <svg width="200" height="50" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
         <rect width="200" height="50" fill="#f8f9fa"/>
@@ -80,7 +126,7 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
         <path d="M165 25 h10 M170 20 v10" stroke="white" stroke-width="2"/>
       </svg>
     `;
-    
+
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -195,11 +241,11 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
         </body>
       </html>
     `;
-    
+
     printWindow.document.write(printContent);
     printWindow.document.close();
   };
-  
+
   const handlePrintVisits = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -210,7 +256,7 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
       });
       return;
     }
-    
+
     const systemLogo = `
       <svg width="200" height="50" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
         <rect width="200" height="50" fill="#f8f9fa"/>
@@ -219,7 +265,7 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
         <path d="M165 25 h10 M170 20 v10" stroke="white" stroke-width="2"/>
       </svg>
     `;
-    
+
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -341,11 +387,11 @@ const VisitsTab = ({ visits, patientName, patientId }: VisitsTabProps) => {
         </body>
       </html>
     `;
-    
+
     printWindow.document.write(printContent);
     printWindow.document.close();
   };
-  
+
   const handleShareVisits = (method: string = 'share') => {
     // Create a summary of the visits for sharing
     const visitsSummary = `
@@ -368,25 +414,25 @@ Generated: ${new Date().toISOString()}
           title: `Medical Visits History - ${patientName}`,
           text: visitsSummary,
         })
-        .then(() => {
-          toast({
-            title: "Shared successfully",
-            description: "Visits history has been shared.",
-            duration: 3000,
-          });
-        })
-        .catch((error) => {
-          // Don't show error if user cancelled the share
-          if (error.name !== 'AbortError') {
-            console.error('Error sharing:', error);
+          .then(() => {
             toast({
-              title: "Share failed",
-              description: "Failed to share visits history. Please try again.",
-              variant: "destructive",
+              title: "Shared successfully",
+              description: "Visits history has been shared.",
               duration: 3000,
             });
-          }
-        });
+          })
+          .catch((error) => {
+            // Don't show error if user cancelled the share
+            if (error.name !== 'AbortError') {
+              console.error('Error sharing:', error);
+              toast({
+                title: "Share failed",
+                description: "Failed to share visits history. Please try again.",
+                variant: "destructive",
+                duration: 3000,
+              });
+            }
+          });
       } else {
         // Fallback to copy to clipboard
         copyToClipboard(visitsSummary);
@@ -396,7 +442,7 @@ Generated: ${new Date().toISOString()}
       const subject = encodeURIComponent(`Medical Visits History - ${patientName}`);
       const body = encodeURIComponent(visitsSummary);
       window.location.href = `mailto:?subject=${subject}&body=${body}`;
-      
+
       toast({
         title: "Email client opened",
         description: "Please complete the email with recipient details.",
@@ -409,16 +455,17 @@ Generated: ${new Date().toISOString()}
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Medical Visits History
-            <span className="text-sm font-normal text-gray-500">
-              ({showAllVisits ? visits.length : Math.min(visits.length, RECENT_LIMIT)} of {visits.length})
-            </span>
-          </CardTitle>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Medical Visits History
+              <span className="text-sm font-normal text-gray-500">
+                ({showAllVisits ? visits.length : Math.min(visits.length, RECENT_LIMIT)} of {visits.length})
+              </span>
+            </CardTitle>
           <div className="flex items-center gap-2">
             <TooltipProvider>
               <Tooltip>
@@ -433,9 +480,9 @@ Generated: ${new Date().toISOString()}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            
-            <Button 
-              variant="outline" 
+
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => handleShareVisits('share')}
             >
@@ -479,11 +526,10 @@ Generated: ${new Date().toISOString()}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      visit.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                    <span className={`px-2 py-1 rounded-full text-xs ${visit.status === 'Completed' ? 'bg-green-100 text-green-800' :
                       visit.status === 'Confirmed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
+                        'bg-gray-100 text-gray-800'
+                      }`}>
                       {visit.status}
                     </span>
                   </TableCell>
@@ -506,8 +552,8 @@ Generated: ${new Date().toISOString()}
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button 
-                              variant="ghost" 
+                            <Button
+                              variant="ghost"
                               size="sm"
                               onClick={() => handlePrintVisit(visit)}
                             >
@@ -526,13 +572,13 @@ Generated: ${new Date().toISOString()}
             </TableBody>
           </Table>
         )}
-        
+
         {/* Show All / Show Recent Toggle */}
         {hasMoreVisits && (
           <div className="flex justify-center mt-4">
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowAllVisits(!showAllVisits)}
               className="text-medical-600 hover:text-medical-700"
             >
@@ -546,6 +592,100 @@ Generated: ${new Date().toISOString()}
         )}
       </CardContent>
     </Card>
+
+    {/* Transfer History Section - Only show for emergency patients */}
+    {isEmergencyPatient && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5" />
+            Emergency Transfer History
+            <span className="text-sm font-normal text-gray-500">
+              ({transfers.length} transfers)
+            </span>
+          </CardTitle>
+        </CardHeader>
+    <CardContent>
+      {loadingTransfers ? (
+        <div className="text-center py-4 text-gray-500">
+          Loading transfer history...
+        </div>
+      ) : transfers.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <ArrowRightLeft className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+          <p>No emergency transfers recorded</p>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Case ID</TableHead>
+              <TableHead>Transfer Date</TableHead>
+              <TableHead>Transferred To</TableHead>
+              <TableHead>Reason</TableHead>
+              <TableHead>Priority</TableHead>
+              <TableHead>Chief Complaint</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transfers.map((transfer) => (
+              <TableRow key={transfer.id}>
+                <TableCell className="font-medium">
+                  <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                    {transfer.caseId}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col">
+                    <span className="font-medium">
+                      {new Date(transfer.transferTime).toLocaleDateString()}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(transfer.transferTime).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge className="bg-blue-100 text-blue-800">
+                    {transfer.transferTo}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-xs">
+                    <div className="font-medium text-sm">{transfer.transferReason}</div>
+                    {transfer.transferNotes && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        {transfer.transferNotes}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    className={
+                      transfer.triagePriority === 'Critical' ? 'bg-red-100 text-red-800' :
+                        transfer.triagePriority === 'High' ? 'bg-orange-100 text-orange-800' :
+                          transfer.triagePriority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-green-100 text-green-800'
+                    }
+                  >
+                    {transfer.triagePriority}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-xs text-sm">
+                    {transfer.chiefComplaint}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </CardContent>
+  </Card>
+    )}
+</div>
   );
 };
 

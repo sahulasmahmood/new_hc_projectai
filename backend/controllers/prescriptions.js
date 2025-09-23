@@ -96,7 +96,7 @@ const createPrescription = async (req, res) => {
     if (appointmentId) {
       const actualEndTime = new Date()
 
-      await prisma.appointment.update({
+      const appointment = await prisma.appointment.update({
         where: { id: Number.parseInt(appointmentId) },
         data: {
           status: "Completed",
@@ -113,6 +113,16 @@ const createPrescription = async (req, res) => {
           lastVisit: new Date(),
         },
       })
+
+      // Update emergency case status if this is an emergency appointment
+      if (appointment.emergencyCaseId) {
+        await prisma.emergencyCase.update({
+          where: { id: appointment.emergencyCaseId },
+          data: {
+            status: 'Discharged'
+          }
+        });
+      }
     }
 
     res.status(201).json({ prescription })

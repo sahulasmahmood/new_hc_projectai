@@ -32,7 +32,12 @@ const getAllEmergencyCases = async (req, res) => {
         temp: c.vitals?.temp || '',
         spo2: c.vitals?.spo2 || '',
       },
-      // Add more fields if needed by frontend
+      // Transfer information
+      transferStatus: c.transferStatus,
+      transferTo: c.transferTo,
+      transferReason: c.transferReason,
+      transferNotes: c.transferNotes,
+      transferTime: c.transferTime?.toISOString() || null,
     }));
     res.json(transformed);
   } catch (error) {
@@ -75,7 +80,12 @@ const getEmergencyCaseById = async (req, res) => {
         temp: c.vitals?.temp || '',
         spo2: c.vitals?.spo2 || '',
       },
-      // Add more fields if needed by frontend
+      // Transfer information
+      transferStatus: c.transferStatus,
+      transferTo: c.transferTo,
+      transferReason: c.transferReason,
+      transferNotes: c.transferNotes,
+      transferTime: c.transferTime?.toISOString() || null,
     };
     res.json(transformed);
   } catch (error) {
@@ -199,6 +209,20 @@ const transferEmergencyCase = async (req, res) => {
     if (!transferTo || !transferReason) {
       return res.status(400).json({ error: 'Missing required transfer fields' });
     }
+
+    // Check if already transferred
+    const existingCase = await prisma.emergencyCase.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!existingCase) {
+      return res.status(404).json({ error: 'Emergency case not found' });
+    }
+
+    if (existingCase.transferStatus === 'Transferred') {
+      return res.status(400).json({ error: 'Case has already been transferred' });
+    }
+
     const updatedCase = await prisma.emergencyCase.update({
       where: { id: parseInt(id) },
       data: {
@@ -207,13 +231,17 @@ const transferEmergencyCase = async (req, res) => {
         transferReason,
         transferNotes,
         transferTime: new Date(),
-        status: 'Transferred',
+        status: 'Transferred', // Update main status to reflect transfer
       },
       include: {
         patient: true,
         appointment: true,
       },
     });
+
+    // Log transfer in patient's medical history (if needed for audit)
+    console.log(`Emergency case ${id} transferred to ${transferTo} at ${new Date().toISOString()}`);
+
     res.json(updatedCase);
   } catch (error) {
     console.error('Error transferring emergency case:', error);
@@ -221,6 +249,44 @@ const transferEmergencyCase = async (req, res) => {
       return res.status(404).json({ error: 'Emergency case not found' });
     }
     res.status(500).json({ error: 'Failed to transfer emergency case' });
+  }
+};
+
+// Get transfer history for a patient (for audit purposes)
+const getPatientTransferHistory = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    const transferHistory = await prisma.emergencyCase.findMany({
+      where: {
+        patientId: parseInt(patientId),
+        transferStatus: 'Transferred'
+      },
+      orderBy: { transferTime: 'desc' },
+      select: {
+        id: true,
+        transferTo: true,
+        transferReason: true,
+        transferNotes: true,
+        transferTime: true,
+        chiefComplaint: true,
+        triagePriority: true,
+        arrivalTime: true,
+        status: true
+      }
+    });
+
+    const formatted = transferHistory.map(transfer => ({
+      ...transfer,
+      caseId: `EM${transfer.id.toString().padStart(3, '0')}`,
+      transferTime: transfer.transferTime?.toISOString(),
+      arrivalTime: transfer.arrivalTime.toISOString()
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error fetching transfer history:', error);
+    res.status(500).json({ error: 'Failed to fetch transfer history' });
   }
 };
 
@@ -447,5 +513,6 @@ module.exports = {
   updateEmergencyCase,
   deleteEmergencyCase,
   transferEmergencyCase,
+  getPatientTransferHistory,
   registerEmergencyCase,
 };

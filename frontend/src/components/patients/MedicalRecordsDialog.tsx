@@ -521,7 +521,8 @@ This is a confidential medical record from MediClinic.`;
                 visits={medicalRecords.visits}
                 onDownloadReport={handleDownloadReport}
                 patientName={patient.name}
-                patientId={patient.visibleId || patient.id}
+                patientId={patient.id.toString()} // Use numeric ID for API calls
+                isEmergencyPatient={patient.createdFromEmergency || false}
               />
             </TabsContent>
 

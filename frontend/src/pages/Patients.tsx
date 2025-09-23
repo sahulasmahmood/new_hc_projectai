@@ -450,11 +450,6 @@ const Patients = () => {
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-gray-400" />
                     <span>Registered: {new Date(patient.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                    {patient.createdFromEmergency && (
-                      <Badge className="ml-1 bg-red-100 text-red-700 border-red-300" variant="outline">
-                        Emergency
-                      </Badge>
-                    )}
                   </div>
                   {patient.consultationStatus === 'active' && patient.consultationStartTime && (
                     <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
