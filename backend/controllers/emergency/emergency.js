@@ -5,7 +5,37 @@ const prisma = new PrismaClient();
 // Get all emergency cases (with patient info)
 const getAllEmergencyCases = async (req, res) => {
   try {
+    const { status, priority, startDate, endDate } = req.query;
+    
+    // Build where clause for filtering
+    const whereClause = {};
+    
+    if (status && status !== 'all') {
+      whereClause.status = status;
+    }
+    
+    if (priority && priority !== 'all') {
+      whereClause.triagePriority = {
+        equals: priority,
+        mode: 'insensitive'
+      };
+    }
+    
+    // Date filtering based on arrivalTime
+    if (startDate || endDate) {
+      whereClause.arrivalTime = {};
+      
+      if (startDate) {
+        whereClause.arrivalTime.gte = new Date(startDate + 'T00:00:00.000Z');
+      }
+      
+      if (endDate) {
+        whereClause.arrivalTime.lte = new Date(endDate + 'T23:59:59.999Z');
+      }
+    }
+
     const cases = await prisma.emergencyCase.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         patient: true,

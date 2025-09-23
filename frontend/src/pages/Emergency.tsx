@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Plus, Clock, User, Phone, Activity, Siren, Heart, Zap, ArrowRightLeft } from "lucide-react";
+import { Plus, Clock, User, Phone, Activity, Siren, Heart, Zap, ArrowRightLeft, Calendar, ExternalLink } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
 import axios from "axios";
 
@@ -53,6 +54,7 @@ const transferHospitals = [
 
 const Emergency = () => {
   const [selectedPriority, setSelectedPriority] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
   const [emergencyCases, setEmergencyCases] = useState<EmergencyCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,10 +97,145 @@ const Emergency = () => {
   const [vitalsSpO2, setVitalsSpO2] = useState("");
   const [vitalsLoading, setVitalsLoading] = useState(false);
   const [vitalsError, setVitalsError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => {
+  // Date range functionality (like billing)
+  const getToday = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    return today.toISOString().split('T')[0];
+  };
+
+  const [dateRange, setDateRange] = useState({
+    startDate: getToday(),
+    endDate: getToday()
   });
+  const [isCustomRangeSelected, setIsCustomRangeSelected] = useState(false);
+
+  // Quick date selector functions
+  const setDateRangeQuick = (type: string) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const last7Days = new Date(today);
+    last7Days.setDate(today.getDate() - 7);
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+    switch (type) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'clear':
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'custom':
+        setIsCustomRangeSelected(true);
+        break;
+    }
+  };
+
+  // Get user-friendly date range description
+  const getDateRangeDescription = () => {
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "All Time";
+    }
+    
+    const today = getToday();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "Today";
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "Yesterday";
+    }
+    
+    if (dateRange.startDate && dateRange.endDate) {
+      const start = new Date(dateRange.startDate).toLocaleDateString();
+      const end = new Date(dateRange.endDate).toLocaleDateString();
+      
+      if (start === end) {
+        return start;
+      }
+      return `${start} - ${end}`;
+    }
+    
+    return "Custom Range";
+  };
+
+  // Get current date range type for dropdown selection
+  const getCurrentDateRangeType = () => {
+    // If custom is explicitly selected, return custom
+    if (isCustomRangeSelected) {
+      return "custom";
+    }
+    
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "clear";
+    }
+    
+    const today = getToday();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+    const last7DaysStr = last7Days.toISOString().split('T')[0];
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "today";
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "yesterday";
+    }
+    
+    if (dateRange.startDate === last7DaysStr && dateRange.endDate === today) {
+      return "last7days";
+    }
+    
+    if (dateRange.startDate === thisMonthStartStr && dateRange.endDate === today) {
+      return "thismonth";
+    }
+    
+    return "custom";
+  };
+
+
   const [transferDetailsDialogOpen, setTransferDetailsDialogOpen] = useState(false);
   const [selectedTransferCase, setSelectedTransferCase] = useState<EmergencyCase | null>(null);
 
@@ -106,7 +243,14 @@ const Emergency = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get("/emergency");
+      const params = new URLSearchParams();
+      if (selectedStatus !== "all") params.append("status", selectedStatus);
+      if (selectedPriority !== "all") params.append("priority", selectedPriority);
+      if (dateRange.startDate) params.append("startDate", dateRange.startDate);
+      if (dateRange.endDate) params.append("endDate", dateRange.endDate);
+      
+      const url = params.toString() ? `/emergency?${params.toString()}` : "/emergency";
+      const res = await api.get(url);
       setEmergencyCases(res.data);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -121,7 +265,7 @@ const Emergency = () => {
 
   useEffect(() => {
     fetchCases();
-  }, []);
+  }, [selectedStatus, selectedPriority, dateRange]);
 
   // Helper to handle form input changes
   const handleRegisterInput = (field: string, value: string) => {
@@ -454,13 +598,8 @@ const Emergency = () => {
     }
   };
 
-  // Filter cases based on selectedPriority and selectedDate
-  const filteredCases = emergencyCases.filter(c => {
-    const caseDate = c.arrivalTime.split('T')[0];
-    const matchesDate = caseDate === selectedDate;
-    const matchesPriority = selectedPriority === "all" || c.triagePriority.toLowerCase() === selectedPriority;
-    return matchesDate && matchesPriority;
-  });
+  // Cases are now filtered on the backend
+  const filteredCases = emergencyCases;
 
   // Helper to format ISO string to local date/time string
   function formatLocalDateTime(isoString: string) {
@@ -631,18 +770,60 @@ const Emergency = () => {
                     <SelectItem value="low">Low</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline">
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  Emergency Alert
-                </Button>
-                <div className="ml-auto">
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    className="border rounded px-2 py-1"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
+
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="Waiting">Waiting</SelectItem>
+                    <SelectItem value="In Treatment">In Treatment</SelectItem>
+                    <SelectItem value="Discharged">Discharged</SelectItem>
+                    <SelectItem value="Transferred">Transferred</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <Label className="text-sm font-medium">Date Range:</Label>
+                <Select 
+                  value={getCurrentDateRangeType()} 
+                  onValueChange={(value) => setDateRangeQuick(value)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">📅 Today</SelectItem>
+                    <SelectItem value="yesterday">📅 Yesterday</SelectItem>
+                    <SelectItem value="last7days">📅 Last 7 Days</SelectItem>
+                    <SelectItem value="thismonth">📅 This Month</SelectItem>
+                    <SelectItem value="clear">📅 All Time</SelectItem>
+                    <SelectItem value="custom">📅 Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Custom Date Range Inputs */}
+                {isCustomRangeSelected && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                      className="w-36"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <Input
+                      type="date"
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                      className="w-36"
+                    />
+                  </div>
+                )}
+
+                <div className="ml-auto text-sm text-gray-600">
+                  Showing: {getDateRangeDescription()}
                 </div>
               </div>
             </CardContent>
@@ -659,9 +840,7 @@ const Emergency = () => {
                 <p className="text-gray-600 mb-4">
                   {emergencyCases.length === 0 
                     ? "No emergency cases have been registered yet. Click 'New Emergency Case' to register the first case."
-                    : selectedPriority === "all"
-                    ? `No emergency cases found for ${selectedDate}. Try selecting a different date or check if there are cases on other dates.`
-                    : `No ${selectedPriority} priority cases found for ${selectedDate}. Try adjusting your filters or selecting a different date.`
+                    : "No emergency cases found matching your current filters. Try adjusting the status, priority, or date range filters."
                   }
                 </p>
                 <div className="flex justify-center gap-3">
@@ -680,14 +859,7 @@ const Emergency = () => {
                       Show All Priorities
                     </Button>
                   )}
-                  {selectedDate !== new Date().toISOString().split('T')[0] && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                    >
-                      Show Today's Cases
-                    </Button>
-                  )}
+
                 </div>
               </CardContent>
             </Card>
@@ -786,6 +958,16 @@ const Emergency = () => {
                     )}
 
                     <div className="mt-4 flex gap-2">
+                      {/* Go to Appointment button for Waiting/In Treatment cases */}
+                      {(case_.status === 'Waiting' || case_.status === 'In Treatment') && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/appointments?patientId=${case_.patientId}`} className="flex items-center gap-2">
+                            <ExternalLink className="h-4 w-4" />
+                            Go to Appointment
+                          </a>
+                        </Button>
+                      )}
+                      
                       {/* Only show Update Status if not transferred */}
                       {case_.transferStatus !== 'Transferred' && (
                         <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
