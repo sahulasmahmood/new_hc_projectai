@@ -452,13 +452,6 @@ const Appointments = () => {
             <input
               type="date"
               value={selectedDate}
-              min={(() => {
-                const today = new Date();
-                const year = today.getFullYear();
-                const month = String(today.getMonth() + 1).padStart(2, '0');
-                const day = String(today.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-              })()} // <-- disables past dates
               onChange={(e) => handleDateChange(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-500"
             />

@@ -386,11 +386,21 @@ const StaffEditDialog = ({
                       <SelectValue placeholder="Select department" />
                     </SelectTrigger>
                     <SelectContent>
-                      {settings.departments.map((dept) => (
-                        <SelectItem key={dept.id} value={dept.id.toString()}>
-                          {dept.name}
-                        </SelectItem>
-                      ))}
+                      {/* Default options for nurses and general staff */}
+                      <SelectItem value="0">General</SelectItem>
+                      <SelectItem value="-1">Nursing</SelectItem>
+                      <SelectItem value="-2">Administration</SelectItem>
+                      <SelectItem value="-3">Support Staff</SelectItem>
+                      {settings.departments.length > 0 && (
+                        <>
+                          <div className="px-2 py-1 text-xs text-gray-500 border-t">Specialized Departments</div>
+                          {settings.departments.map((dept) => (
+                            <SelectItem key={dept.id} value={dept.id.toString()}>
+                              {dept.name}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

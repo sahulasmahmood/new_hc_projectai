@@ -234,6 +234,22 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
       return;
     }
 
+    // Check if there's unsaved medicine data
+    const hasUnsavedMedicine = newMedication.name.trim() || 
+                              newMedication.dosage.trim() || 
+                              newMedication.frequency.trim() || 
+                              newMedication.duration.trim();
+    
+    if (hasUnsavedMedicine) {
+      toast({
+        title: "⚠️ Unsaved Medicine Details",
+        description: `You have entered medicine details "${newMedication.name}" but haven't added it to the prescription. Click "Add" to include it, or clear the fields to continue.`,
+        variant: "destructive",
+        duration: 8000
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const selectedDoctor = doctors.find(d => d.id.toString() === selectedDoctorId);

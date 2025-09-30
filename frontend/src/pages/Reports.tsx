@@ -12,19 +12,24 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
-import PrescriptionViewModal from "@/components/prescription/PrescriptionViewModal";
+
+
 
 
 const Reports = () => {
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>({});
-  // Set default date to today in YYYY-MM-DD
+  // Set default date range to today
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
-  const [date, setDate] = useState<string>(`${yyyy}-${mm}-${dd}`);
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+  const [dateRange, setDateRange] = useState({
+    startDate: todayStr,
+    endDate: todayStr
+  });
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [total, setTotal] = useState(0);
@@ -37,8 +42,8 @@ const Reports = () => {
   const [billsMap, setBillsMap] = useState<Map<number, any>>(new Map());
   const [loadingBills, setLoadingBills] = useState<Set<number>>(new Set());
   const [generatingBills, setGeneratingBills] = useState<Set<number>>(new Set());
-  const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
-  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+
+
   
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -46,7 +51,7 @@ const Reports = () => {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line
-  }, [date, page, tab]);
+  }, [dateRange.startDate, dateRange.endDate, page, tab]);
 
   useEffect(() => {
     if (tab === 'prescriptions' && prescriptions.length > 0) {
@@ -57,16 +62,23 @@ const Reports = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const params = { 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate, 
+        page, 
+        pageSize 
+      };
+      
       if (tab === "prescriptions") {
-        const res = await api.get("/reports/prescriptions", { params: { date, page, pageSize } });
+        const res = await api.get("/reports/prescriptions", { params });
         setPrescriptions(res.data.data);
         setTotal(res.data.total);
       } else {
-        const res = await api.get("/reports/appointments", { params: { date, page, pageSize } });
+        const res = await api.get("/reports/appointments", { params });
         setAppointments(res.data.data);
         setTotal(res.data.total);
       }
-      const summaryRes = await api.get("/reports/summary", { params: { date } });
+      const summaryRes = await api.get("/reports/summary", { params: { startDate: dateRange.startDate, endDate: dateRange.endDate } });
       setSummary(summaryRes.data);
     } catch (e) {
       // handle error
@@ -148,19 +160,27 @@ const Reports = () => {
   };
 
   const handleViewPrescription = (prescription: any) => {
-    setSelectedPrescription(prescription);
-    setShowPrescriptionModal(true);
+    // Navigate to patient's prescription history and auto-open the specific prescription
+    navigate(`/patients`, { 
+      state: { 
+        openMedicalRecords: true,
+        patientId: prescription.patientId,
+        patientName: prescription.patientName,
+        activeTab: 'prescriptions',
+        prescriptionToOpen: prescription
+      } 
+    });
   };
 
   const handleExport = async (type: 'csv'|'pdf') => {
     const url = tab === 'prescriptions' ? '/reports/prescriptions/export' : '/reports/appointments/export';
     const format = type;
-    const params = { date, format };
+    const params = { startDate: dateRange.startDate, endDate: dateRange.endDate, format };
     const response = await api.get(url, { params, responseType: 'blob' });
     const blob = new Blob([response.data], { type: type === 'csv' ? 'text/csv' : 'application/pdf' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.download = `${tab}_report.${type}`;
+    link.download = `${tab}_report_${dateRange.startDate}_to_${dateRange.endDate}.${type}`;
     link.click();
   };
 
@@ -299,7 +319,45 @@ const Reports = () => {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Input type="date" value={date} onChange={e => { setDate(e.target.value); setPage(1); }} />
+              <span className="text-sm text-gray-600">From:</span>
+              <input
+                type="date"
+                value={dateRange.startDate}
+                onChange={e => { setDateRange({ ...dateRange, startDate: e.target.value }); setPage(1); }}
+                className="border rounded px-2 py-1"
+                max={new Date().toISOString().split('T')[0]}
+              />
+              <span className="text-sm text-gray-600">To:</span>
+              <input
+                type="date"
+                value={dateRange.endDate}
+                onChange={e => { setDateRange({ ...dateRange, endDate: e.target.value }); setPage(1); }}
+                className="border rounded px-2 py-1"
+                max={new Date().toISOString().split('T')[0]}
+              />
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  setDateRange({ startDate: today, endDate: today });
+                  setPage(1);
+                }}
+                className="text-xs"
+              >
+                Today
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  setDateRange({ startDate: "", endDate: "" });
+                  setPage(1);
+                }}
+                className="text-xs"
+              >
+                Clear
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -309,43 +367,56 @@ const Reports = () => {
       <Card>
         <CardContent className="p-4">
           {loading ? (
-            <div className="text-center py-8">Loading...</div>
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-500 mx-auto"></div>
+              <p className="mt-2 text-gray-600">Loading reports...</p>
+            </div>
           ) : (
             <>
               {tab === 'prescriptions' ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="p-2 text-left">Patient</th>
-                        <th className="p-2 text-left">Doctor</th>
-                        <th className="p-2 text-left">Complaint</th>
-                        <th className="p-2 text-left">Date</th>
-                        <th className="p-2 text-left">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPrescriptions.map((p) => {
+                <>
+                  {filteredPrescriptions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No prescriptions found</h3>
+                      <p className="text-gray-600">
+                        No prescriptions match your current filters for the selected date.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-medical-50 to-medical-100 border-b border-medical-200">
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Patient</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Doctor</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Complaint</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Date</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {filteredPrescriptions.map((p) => {
                         const existingBill = billsMap.get(p.id);
                         const isGenerating = generatingBills.has(p.id);
                         const isLoadingBill = loadingBills.has(p.id);
                         
-                        return (
-                          <tr key={p.id} className="border-b hover:bg-gray-50">
-                            <td className="p-2">
-                              <div>
-                                <span className="font-medium">{p.patientName}</span>
-                                <span className="text-xs text-gray-400 ml-1">({p.patientVisibleId})</span>
-                              </div>
-                            </td>
-                            <td className="p-2">{p.doctorName}</td>
-                            <td className="p-2">
-                              <div className="max-w-xs truncate" title={p.chiefComplaint}>
-                                {p.chiefComplaint}
-                              </div>
-                            </td>
-                            <td className="p-2">{formatDateTime(p.createdAt)}</td>
-                            <td className="p-2">
+                            return (
+                              <tr key={p.id} className="hover:bg-medical-50 transition-colors">
+                                <td className="px-4 py-3">
+                                  <div>
+                                    <span className="font-medium text-gray-900">{p.patientName}</span>
+                                    <span className="text-xs text-gray-500 ml-1 font-mono">({p.patientVisibleId})</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-gray-700">{p.doctorName}</td>
+                                <td className="px-4 py-3">
+                                  <div className="max-w-xs truncate text-gray-700" title={p.chiefComplaint}>
+                                    {p.chiefComplaint}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-gray-700">{formatDateTime(p.createdAt)}</td>
+                                <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <Button
                                   variant="outline"
@@ -397,79 +468,107 @@ const Reports = () => {
                             </td>
                           </tr>
                         );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="p-2 text-left">Patient</th>
-                        <th className="p-2 text-left">Date</th>
-                        <th className="p-2 text-left">Time</th>
-                        <th className="p-2 text-left">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAppointments.map((a) => (
-                        <tr key={a.id} className="border-b">
-                          <td className="p-2">
-                            {a.patientName ? (
-                              <>
-                                {a.patientName} <span className="text-xs text-gray-400">({a.patientVisibleId || a.patientId})</span>
-                              </>
-                            ) : (
-                              a.patientId
-                            )}
-                          </td>
-                          <td className="p-2">{formatDateOnly(a.date)}</td>
-                          <td className="p-2">{getAppointmentTime(a)}</td>
-                          <td className="p-2"><span className={`px-2 py-1 rounded ${getStatusColor(a.status)}`}>{a.status}</span></td>
-                        </tr>
+                <>
+                  {filteredAppointments.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No appointments found</h3>
+                      <p className="text-gray-600">
+                        No appointments match your current filters for the selected date.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-medical-50 to-medical-100 border-b border-medical-200">
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Patient</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Date</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Time</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-medical-900">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {filteredAppointments.map((a) => (
+                            <tr key={a.id} className="hover:bg-medical-50 transition-colors">
+                              <td className="px-4 py-3">
+                                {a.patientName ? (
+                                  <>
+                                    <span className="font-medium text-gray-900">{a.patientName}</span>
+                                    <span className="text-xs text-gray-500 ml-1 font-mono">({a.patientVisibleId || a.patientId})</span>
+                                  </>
+                                ) : (
+                                  <span className="text-gray-700">{a.patientId}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-gray-700">{formatDateOnly(a.date)}</td>
+                              <td className="px-4 py-3 text-gray-700">{getAppointmentTime(a)}</td>
+                              <td className="px-4 py-3">
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(a.status)}`}>
+                                  {a.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+              
+              {/* Pagination - only show if there are results and more than one page */}
+              {((tab === 'prescriptions' && filteredPrescriptions.length > 0) || 
+                (tab === 'appointments' && filteredAppointments.length > 0)) && 
+                Math.ceil(total / pageSize) > 1 && (
+                <div className="flex items-center justify-between pt-4">
+                  <div className="text-sm text-gray-600">
+                    Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, total)} of {total} {tab}
+                  </div>
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious 
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                      
+                      {Array.from({ length: Math.ceil(total / pageSize) }, (_, i) => i + 1).map((pageNum) => (
+                        <PaginationItem key={pageNum}>
+                          <PaginationLink
+                            onClick={() => setPage(pageNum)}
+                            isActive={page === pageNum}
+                            className="cursor-pointer"
+                          >
+                            {pageNum}
+                          </PaginationLink>
+                        </PaginationItem>
                       ))}
-                    </tbody>
-                  </table>
+                      
+                      <PaginationItem>
+                        <PaginationNext 
+                          onClick={() => setPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))}
+                          className={page === Math.ceil(total / pageSize) ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
-              {/* Pagination */}
-              <div className="mt-4 flex justify-center">
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious onClick={() => setPage((p) => Math.max(1, p - 1))} />
-                    </PaginationItem>
-                    {[...Array(Math.ceil(total / pageSize)).keys()].map((i) => (
-                      <PaginationItem key={i}>
-                        <PaginationLink isActive={page === i + 1} onClick={() => setPage(i + 1)}>{i + 1}</PaginationLink>
-                      </PaginationItem>
-                    ))}
-                    <PaginationItem>
-                      <PaginationNext onClick={() => setPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))} />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Prescription View Modal */}
-      {selectedPrescription && (
-        <PrescriptionViewModal
-          prescription={selectedPrescription}
-          onClose={() => {
-            setShowPrescriptionModal(false);
-            setSelectedPrescription(null);
-            // Refresh bills after prescription modal closes (in case bill was generated)
-            if (tab === 'prescriptions') {
-              checkExistingBills();
-            }
-          }}
-        />
-      )}
+
     </div>
   );
 };

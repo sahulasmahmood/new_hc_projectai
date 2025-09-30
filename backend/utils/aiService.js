@@ -40,7 +40,7 @@ Examples:
           content: `What language is this: "${input}"`
         }
       ],
-      model: "llama3-8b-8192",
+      model: "llama-3.1-8b-instant",
       temperature: 0.1,
       max_tokens: 10,
     });
@@ -86,7 +86,7 @@ NON_MEDICAL examples:
           content: `Is this medical/health related: "${input}"`
         }
       ],
-      model: "llama3-8b-8192",
+      model: "llama-3.1-8b-instant",
       temperature: 0.1,
       max_tokens: 10,
     });
@@ -100,26 +100,26 @@ NON_MEDICAL examples:
   }
 };
 
-// GROQ models in order of preference (best to fallback)
+// GROQ models in order of preference (updated with current supported models)
 const GROQ_MODELS = [
   {
-    name: "llama3-8b-8192",
-    description: "Fast and efficient",
+    name: "llama-3.1-8b-instant",
+    description: "Fast and efficient Llama 3.1",
     maxTokens: 1000
   },
   {
-    name: "llama3-70b-8192", 
-    description: "Higher quality, slower",
+    name: "llama-3.1-70b-versatile", 
+    description: "Higher quality Llama 3.1, slower",
     maxTokens: 1000
   },
   {
-    name: "mixtral-8x7b-32768",
-    description: "Good alternative with large context",
+    name: "llama-3.2-3b-preview",
+    description: "Latest Llama 3.2 preview",
     maxTokens: 1000
   },
   {
-    name: "gemma-7b-it",
-    description: "Google's model alternative",
+    name: "gemma2-9b-it",
+    description: "Google's Gemma 2 model",
     maxTokens: 1000
   }
 ];

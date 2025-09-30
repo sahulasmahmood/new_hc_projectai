@@ -239,9 +239,70 @@ export default function RolesResponsibility() {
 
         {/* Permissions Table */}
         <div>
-          <h2 className="text-lg font-bold mb-4 text-gray-900">
-            Permissions
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">
+              Permissions
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const newState = { ...permissionsState };
+                  permissions.forEach(permission => {
+                    newState[permission] = {
+                      View: true,
+                      Create: true,
+                      Edit: true,
+                      Delete: true
+                    };
+                  });
+                  setPermissionsState(newState);
+                }}
+                className="text-xs"
+              >
+                Select All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const newState = { ...permissionsState };
+                  permissions.forEach(permission => {
+                    newState[permission] = {
+                      View: false,
+                      Create: false,
+                      Edit: false,
+                      Delete: false
+                    };
+                  });
+                  setPermissionsState(newState);
+                }}
+                className="text-xs"
+              >
+                Clear All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const newState = { ...permissionsState };
+                  permissions.forEach(permission => {
+                    newState[permission] = {
+                      View: true,
+                      Create: false,
+                      Edit: false,
+                      Delete: false
+                    };
+                  });
+                  setPermissionsState(newState);
+                }}
+                className="text-xs"
+              >
+                View Only
+              </Button>
+            </div>
+          </div>
           <div className="rounded-lg overflow-hidden border">
             <table className="w-full">
               <thead>

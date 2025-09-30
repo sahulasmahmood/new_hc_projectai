@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +70,11 @@ const Patients = () => {
   const [abortReason, setAbortReason] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [patientsPerPage] = useState(9); // 3x3 grid
+  const [autoOpenMedicalRecords, setAutoOpenMedicalRecords] = useState<{
+    patient: Patient | null;
+    activeTab: string;
+    prescriptionToOpen?: any;
+  }>({ patient: null, activeTab: 'prescriptions' });
   const [dateRange, setDateRange] = useState(() => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
@@ -85,6 +90,18 @@ const Patients = () => {
   // Check if we're coming from appointments with a consultation ID
   const urlParams = new URLSearchParams(window.location.search);
   const consultationId = urlParams.get('consultationId');
+  
+  // Check if we're coming from reports to open medical records
+  const location = useLocation();
+  const navigationState = location.state as {
+    openMedicalRecords?: boolean;
+    patientId?: number;
+    patientName?: string;
+    activeTab?: string;
+    prescriptionToOpen?: any;
+  } | null;
+  
+
 
   // Fetch patients data
   const fetchPatients = async (search?: string) => {
@@ -126,6 +143,24 @@ const Patients = () => {
       return () => clearTimeout(debounceTimer);
     }
   }, [searchTerm, consultationId]);
+
+  // Handle navigation from reports to open medical records
+  useEffect(() => {
+    if (navigationState?.openMedicalRecords && navigationState.patientId && patients.length > 0) {
+      const targetPatient = patients.find(p => p.id === navigationState.patientId);
+      if (targetPatient) {
+        setAutoOpenMedicalRecords({
+          patient: targetPatient,
+          activeTab: navigationState.activeTab || 'prescriptions',
+          prescriptionToOpen: navigationState.prescriptionToOpen
+        });
+        // Clear the navigation state
+        navigate(location.pathname, { replace: true, state: null });
+      }
+    }
+  }, [navigationState, patients, navigate, location.pathname]);
+
+
 
   // Filter patients based on dateRange and filterType
   const filteredPatients = patients.filter(patient => {
@@ -454,7 +489,7 @@ const Patients = () => {
                   {patient.consultationStatus === 'active' && patient.consultationStartTime && (
                     <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
                       <Clock className="h-4 w-4" />
-                      <span>Consultation started: {new Date(patient.consultationStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>Consultation started: {new Date(patient.consultationStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({new Date(patient.consultationStartTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })})</span>
                     </div>
                   )}
                   </div>
@@ -636,6 +671,22 @@ const Patients = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      )}
+
+      {/* Auto-open Medical Records Dialog from Reports navigation */}
+      {autoOpenMedicalRecords.patient && (
+        <MedicalRecordsDialog
+          patient={autoOpenMedicalRecords.patient}
+          defaultActiveTab={autoOpenMedicalRecords.activeTab}
+          prescriptionToOpen={autoOpenMedicalRecords.prescriptionToOpen}
+          trigger={null}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) {
+              setAutoOpenMedicalRecords({ patient: null, activeTab: 'prescriptions' });
+            }
+          }}
+        />
       )}
     </div>
   );

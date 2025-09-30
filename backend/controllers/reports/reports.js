@@ -14,9 +14,29 @@ function getPagination(query) {
 // GET /api/reports/prescriptions
 exports.getPrescriptionsReport = async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, startDate, endDate } = req.query;
     const { skip, take } = getPagination(req.query);
-    const where = date ? { createdAt: { gte: new Date(date + 'T00:00:00Z'), lte: new Date(date + 'T23:59:59Z') } } : {};
+    
+    let where = {};
+    
+    // Handle date range (new format)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate + 'T00:00:00Z');
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(endDate + 'T23:59:59Z');
+      }
+    }
+    // Handle single date (backward compatibility)
+    else if (date) {
+      where.createdAt = { 
+        gte: new Date(date + 'T00:00:00Z'), 
+        lte: new Date(date + 'T23:59:59Z') 
+      };
+    }
+    
     const [data, total] = await Promise.all([
       prisma.prescription.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
       prisma.prescription.count({ where })
@@ -30,18 +50,29 @@ exports.getPrescriptionsReport = async (req, res) => {
 // GET /api/reports/appointments
 exports.getAppointmentsReport = async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, startDate, endDate } = req.query;
     const { skip, take } = getPagination(req.query);
+    
     let where = {};
-    if (date) {
-      // Filter by date range (00:00 to 23:59 UTC)
-      where = {
-        date: {
-          gte: date + 'T00:00:00.000Z',
-          lte: date + 'T23:59:59.999Z'
-        }
+    
+    // Handle date range (new format)
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) {
+        where.date.gte = startDate + 'T00:00:00.000Z';
+      }
+      if (endDate) {
+        where.date.lte = endDate + 'T23:59:59.999Z';
+      }
+    }
+    // Handle single date (backward compatibility)
+    else if (date) {
+      where.date = {
+        gte: date + 'T00:00:00.000Z',
+        lte: date + 'T23:59:59.999Z'
       };
     }
+    
     const [data, total] = await Promise.all([
       prisma.appointment.findMany({ where, orderBy: { date: 'desc' }, skip, take }),
       prisma.appointment.count({ where })
@@ -55,22 +86,47 @@ exports.getAppointmentsReport = async (req, res) => {
 // GET /api/reports/summary
 exports.getSummaryMetrics = async (req, res) => {
   try {
-    const { date } = req.query;
-    let dateRange = {};
-    if (date) {
-      dateRange = {
+    const { date, startDate, endDate } = req.query;
+    
+    let appointmentDateRange = {};
+    let prescriptionDateRange = {};
+    
+    // Handle date range (new format)
+    if (startDate || endDate) {
+      appointmentDateRange.date = {};
+      prescriptionDateRange.createdAt = {};
+      
+      if (startDate) {
+        appointmentDateRange.date.gte = startDate + 'T00:00:00.000Z';
+        prescriptionDateRange.createdAt.gte = new Date(startDate + 'T00:00:00Z');
+      }
+      if (endDate) {
+        appointmentDateRange.date.lte = endDate + 'T23:59:59.999Z';
+        prescriptionDateRange.createdAt.lte = new Date(endDate + 'T23:59:59Z');
+      }
+    }
+    // Handle single date (backward compatibility)
+    else if (date) {
+      appointmentDateRange = {
         date: {
           gte: date + 'T00:00:00.000Z',
           lte: date + 'T23:59:59.999Z'
         }
       };
+      prescriptionDateRange = {
+        createdAt: { 
+          gte: new Date(date + 'T00:00:00Z'), 
+          lte: new Date(date + 'T23:59:59Z') 
+        }
+      };
     }
+    
     // Case-insensitive status check for completed and not_visited
     const [totalAppointments, completedAppointments, noShowAppointments, totalPrescriptions] = await Promise.all([
-      prisma.appointment.count({ where: dateRange }),
-      prisma.appointment.count({ where: { ...dateRange, status: { equals: 'completed', mode: 'insensitive' } } }),
-      prisma.appointment.count({ where: { ...dateRange, status: { equals: 'not_visited', mode: 'insensitive' } } }),
-      prisma.prescription.count({ where: date ? { createdAt: { gte: new Date(date + 'T00:00:00Z'), lte: new Date(date + 'T23:59:59Z') } } : {} })
+      prisma.appointment.count({ where: appointmentDateRange }),
+      prisma.appointment.count({ where: { ...appointmentDateRange, status: { equals: 'completed', mode: 'insensitive' } } }),
+      prisma.appointment.count({ where: { ...appointmentDateRange, status: { equals: 'not_visited', mode: 'insensitive' } } }),
+      prisma.prescription.count({ where: prescriptionDateRange })
     ]);
     res.json({ totalAppointments, completedAppointments, noShowAppointments, totalPrescriptions });
   } catch (err) {
@@ -81,8 +137,28 @@ exports.getSummaryMetrics = async (req, res) => {
 // GET /api/reports/prescriptions/export
 exports.exportPrescriptionsReport = async (req, res) => {
   try {
-    const { date, format } = req.query;
-    const where = date ? { createdAt: { gte: new Date(date + 'T00:00:00Z'), lte: new Date(date + 'T23:59:59Z') } } : {};
+    const { date, startDate, endDate, format } = req.query;
+    
+    let where = {};
+    
+    // Handle date range (new format)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate + 'T00:00:00Z');
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(endDate + 'T23:59:59Z');
+      }
+    }
+    // Handle single date (backward compatibility)
+    else if (date) {
+      where.createdAt = { 
+        gte: new Date(date + 'T00:00:00Z'), 
+        lte: new Date(date + 'T23:59:59Z') 
+      };
+    }
+    
     const data = await prisma.prescription.findMany({ where, orderBy: { createdAt: 'desc' } });
     if (format === 'csv') {
       const parser = new Parser();
@@ -111,16 +187,28 @@ exports.exportPrescriptionsReport = async (req, res) => {
 // GET /api/reports/appointments/export
 exports.exportAppointmentsReport = async (req, res) => {
   try {
-    const { date, format } = req.query;
+    const { date, startDate, endDate, format } = req.query;
+    
     let where = {};
-    if (date) {
-      where = {
-        date: {
-          gte: date + 'T00:00:00.000Z',
-          lte: date + 'T23:59:59.999Z'
-        }
+    
+    // Handle date range (new format)
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) {
+        where.date.gte = startDate + 'T00:00:00.000Z';
+      }
+      if (endDate) {
+        where.date.lte = endDate + 'T23:59:59.999Z';
+      }
+    }
+    // Handle single date (backward compatibility)
+    else if (date) {
+      where.date = {
+        gte: date + 'T00:00:00.000Z',
+        lte: date + 'T23:59:59.999Z'
       };
     }
+    
     const data = await prisma.appointment.findMany({ where, orderBy: { date: 'desc' } });
     if (format === 'csv') {
       const parser = new Parser();

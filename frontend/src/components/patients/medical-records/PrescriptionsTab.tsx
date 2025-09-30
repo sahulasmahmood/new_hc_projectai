@@ -65,6 +65,7 @@ interface PrescriptionsTabProps {
   onDownloadReport: (type: string, format?: string) => void;
   patientName: string;
   patientId: string;
+  prescriptionToOpen?: Prescription;
 }
 
 const PrescriptionsTab = ({
@@ -72,6 +73,7 @@ const PrescriptionsTab = ({
   onDownloadReport,
   patientName,
   patientId,
+  prescriptionToOpen,
 }: PrescriptionsTabProps) => {
   const [showAllPrescriptions, setShowAllPrescriptions] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
@@ -96,6 +98,15 @@ const PrescriptionsTab = ({
     };
     fetchHospitalInfo();
   }, []);
+
+  // Auto-open prescription if provided from Reports navigation
+  useEffect(() => {
+    if (prescriptionToOpen && prescriptions.length > 0) {
+      // Find the prescription in the current list or use the provided one
+      const prescriptionToShow = prescriptions.find(p => p.id === prescriptionToOpen.id) || prescriptionToOpen;
+      setSelectedPrescription(prescriptionToShow);
+    }
+  }, [prescriptionToOpen, prescriptions]);
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,

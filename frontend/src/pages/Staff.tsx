@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 const Staff = () => {
   const { toast } = useToast();
   const [selectedDepartment, setSelectedDepartment] = useState("all");
+  const [selectedRole, setSelectedRole] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
@@ -107,14 +108,19 @@ const Staff = () => {
     const departmentName = member.department?.name || "";
     const matchesDepartment =
       selectedDepartment === "all" || departmentName === selectedDepartment;
+    const matchesRole =
+      selectedRole === "all" || member.role === selectedRole;
     const matchesSearch =
       !searchQuery ||
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
       departmentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (member.employeeId && member.employeeId.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesDepartment && matchesSearch;
+    return matchesDepartment && matchesRole && matchesSearch;
   });
+
+  // Get unique roles for filter
+  const roles = Array.from(new Set(staffMembers.map(member => member.role))).sort();
 
   // Pagination logic
   const totalPages = Math.ceil(filteredStaff.length / itemsPerPage);
@@ -125,7 +131,7 @@ const Staff = () => {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedDepartment, searchQuery]);
+  }, [selectedDepartment, selectedRole, searchQuery]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -261,6 +267,22 @@ const Staff = () => {
                   {departments.map((dept) => (
                     <SelectItem key={dept.id} value={dept.name}>
                       {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedRole}
+                onValueChange={setSelectedRole}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filter by role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {role}
                     </SelectItem>
                   ))}
                 </SelectContent>

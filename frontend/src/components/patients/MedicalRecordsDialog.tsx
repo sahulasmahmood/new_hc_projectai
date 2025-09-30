@@ -12,15 +12,30 @@ import api from "@/lib/api";
 interface MedicalRecordsDialogProps {
   patient: unknown;
   trigger?: React.ReactNode;
+  defaultActiveTab?: string;
+  prescriptionToOpen?: any;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-const MedicalRecordsDialog = ({ patient, trigger }: MedicalRecordsDialogProps) => {
+const MedicalRecordsDialog = ({ 
+  patient, 
+  trigger, 
+  defaultActiveTab = 'visits',
+  prescriptionToOpen,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange
+}: MedicalRecordsDialogProps) => {
   const [medicalRecords, setMedicalRecords] = useState({
     visits: [],
     prescriptions: []
   });
   const [loading, setLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  
+  // Use controlled or internal state
+  const isOpen = controlledOpen !== undefined ? controlledOpen : internalIsOpen;
+  const setIsOpen = controlledOnOpenChange || setInternalIsOpen;
 
   // Fetch real medical records data
   const fetchMedicalRecords = useCallback(async () => {
@@ -510,7 +525,7 @@ This is a confidential medical record from MediClinic.`;
             <span>Loading medical records...</span>
           </div>
         ) : (
-          <Tabs defaultValue="visits" className="space-y-4">
+          <Tabs defaultValue={defaultActiveTab} className="space-y-4">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="visits">Medical Visits ({medicalRecords.visits.length})</TabsTrigger>
               <TabsTrigger value="prescriptions">Prescriptions ({medicalRecords.prescriptions.length})</TabsTrigger>
@@ -534,6 +549,7 @@ This is a confidential medical record from MediClinic.`;
                 getStatusBadge={getStatusBadge}
                 patientName={patient.name}
                 patientId={patient.visibleId || patient.id}
+                prescriptionToOpen={prescriptionToOpen}
               />
             </TabsContent>
           </Tabs>

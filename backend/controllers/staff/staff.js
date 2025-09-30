@@ -114,15 +114,48 @@ const createStaff = async (req, res) => {
       });
     }
 
-    // Validate department exists
-    const department = await prisma.department.findUnique({
-      where: { id: parseInt(departmentId) }
-    });
-
-    if (!department) {
-      return res.status(400).json({
-        error: 'Invalid department selected'
+    // Handle default departments (negative IDs) or validate existing departments
+    let finalDepartmentId = parseInt(departmentId);
+    
+    if (finalDepartmentId <= 0) {
+      // Handle default departments - create them if they don't exist
+      const defaultDepartments = {
+        0: 'General',
+        '-1': 'Nursing',
+        '-2': 'Administration',
+        '-3': 'Support Staff'
+      };
+      
+      const departmentName = defaultDepartments[departmentId];
+      if (!departmentName) {
+        return res.status(400).json({
+          error: 'Invalid department selected'
+        });
+      }
+      
+      // Find or create the default department
+      let department = await prisma.department.findFirst({
+        where: { name: departmentName }
       });
+      
+      if (!department) {
+        department = await prisma.department.create({
+          data: { name: departmentName }
+        });
+      }
+      
+      finalDepartmentId = department.id;
+    } else {
+      // Validate existing department
+      const department = await prisma.department.findUnique({
+        where: { id: finalDepartmentId }
+      });
+
+      if (!department) {
+        return res.status(400).json({
+          error: 'Invalid department selected'
+        });
+      }
     }
 
     // Validate role exists in RolePermission
@@ -159,7 +192,7 @@ const createStaff = async (req, res) => {
         name,
         role,
         department: {
-          connect: { id: parseInt(departmentId) }
+          connect: { id: finalDepartmentId }
         },
         shiftTime: shiftId ? {
           connect: { id: parseInt(shiftId) }
@@ -223,16 +256,50 @@ const updateStaff = async (req, res) => {
       return res.status(404).json({ error: 'Staff member not found' });
     }
 
-    // Validate department if provided
+    // Handle department update if provided
+    let finalDepartmentId = null;
     if (departmentId) {
-      const department = await prisma.department.findUnique({
-        where: { id: parseInt(departmentId) }
-      });
-
-      if (!department) {
-        return res.status(400).json({
-          error: 'Invalid department selected'
+      finalDepartmentId = parseInt(departmentId);
+      
+      if (finalDepartmentId <= 0) {
+        // Handle default departments - create them if they don't exist
+        const defaultDepartments = {
+          0: 'General',
+          '-1': 'Nursing',
+          '-2': 'Administration',
+          '-3': 'Support Staff'
+        };
+        
+        const departmentName = defaultDepartments[departmentId];
+        if (!departmentName) {
+          return res.status(400).json({
+            error: 'Invalid department selected'
+          });
+        }
+        
+        // Find or create the default department
+        let department = await prisma.department.findFirst({
+          where: { name: departmentName }
         });
+        
+        if (!department) {
+          department = await prisma.department.create({
+            data: { name: departmentName }
+          });
+        }
+        
+        finalDepartmentId = department.id;
+      } else {
+        // Validate existing department
+        const department = await prisma.department.findUnique({
+          where: { id: finalDepartmentId }
+        });
+
+        if (!department) {
+          return res.status(400).json({
+            error: 'Invalid department selected'
+          });
+        }
       }
     }
 
@@ -268,8 +335,8 @@ const updateStaff = async (req, res) => {
       data: {
         name,
         role,
-        department: departmentId ? {
-          connect: { id: parseInt(departmentId) }
+        department: finalDepartmentId ? {
+          connect: { id: finalDepartmentId }
         } : undefined,
         shiftTime: shiftId ? {
           connect: { id: parseInt(shiftId) }

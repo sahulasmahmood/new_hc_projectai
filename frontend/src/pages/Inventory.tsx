@@ -39,7 +39,10 @@ const Inventory = () => {
   const [error, setError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
   const [categories, setCategories] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: ""
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   type FilterType = 'all' | 'lowStock' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
@@ -119,7 +122,7 @@ const Inventory = () => {
 
   const totalValue = inventory.reduce((sum, item) => sum + (item.currentStock * item.pricePerUnit), 0);
 
-  // Filter inventory by lastRestocked date if selectedDate is set
+  // Filter inventory by date range if set
   const filteredInventory = inventory.filter(item => {
     if (filterType === 'all') return true;
     if (filterType === 'lowStock') return item.currentStock <= item.minStock;
@@ -131,10 +134,16 @@ const Inventory = () => {
       return expiryDate <= thirtyDaysFromNow;
     }
     if (filterType === 'lastRestocked' || filterType === 'createdAt') {
-      if (!selectedDate) return true;
+      if (!dateRange.startDate && !dateRange.endDate) return true;
       const dateField = filterType === 'lastRestocked' ? item.lastRestocked : item.createdAt;
       if (!dateField) return false;
-      return dateField.split('T')[0] === selectedDate;
+      const itemDate = dateField.split('T')[0];
+      
+      // Check if item date is within the range
+      if (dateRange.startDate && itemDate < dateRange.startDate) return false;
+      if (dateRange.endDate && itemDate > dateRange.endDate) return false;
+      
+      return true;
     }
     return true;
   });
@@ -145,7 +154,7 @@ const Inventory = () => {
   const currentInventory = filteredInventory.slice(indexOfFirstItem, indexOfLastItem);
   const handlePageChange = (page: number) => setCurrentPage(page);
   // Reset to first page when filter changes
-  useEffect(() => { setCurrentPage(1); }, [selectedDate, selectedCategory, searchQuery, filterType]);
+  useEffect(() => { setCurrentPage(1); }, [dateRange.startDate, dateRange.endDate, selectedCategory, searchQuery, filterType]);
 
   return (
     <div className="p-6 space-y-6">
@@ -307,20 +316,32 @@ const Inventory = () => {
                   <SelectItem value="createdAt">Created Date</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Show date input only for date filters */}
+              {/* Show date range inputs only for date filters */}
               {(filterType === 'lastRestocked' || filterType === 'createdAt') && (
                 <>
+                  <span className="text-sm text-gray-600">From:</span>
                   <input
                     type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
+                    value={dateRange.startDate}
+                    onChange={e => setDateRange({ ...dateRange, startDate: e.target.value })}
+                    className="border rounded px-2 py-1"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <span className="text-sm text-gray-600">To:</span>
+                  <input
+                    type="date"
+                    value={dateRange.endDate}
+                    onChange={e => setDateRange({ ...dateRange, endDate: e.target.value })}
                     className="border rounded px-2 py-1"
                     max={new Date().toISOString().split('T')[0]}
                   />
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                    onClick={() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      setDateRange({ startDate: today, endDate: today });
+                    }}
                     className="text-xs"
                   >
                     Today
@@ -328,7 +349,7 @@ const Inventory = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setSelectedDate("")}
+                    onClick={() => setDateRange({ startDate: "", endDate: "" })}
                     className="text-xs"
                   >
                     Clear
