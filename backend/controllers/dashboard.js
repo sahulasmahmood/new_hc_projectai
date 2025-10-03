@@ -22,7 +22,7 @@ const getDashboardStats = async (req, res) => {
       totalPrescriptions,
       totalBills,
       pendingBills,
-      lowStockItems,
+      inventoryItems,
       emergencyCases,
       activeStaff
     ] = await Promise.all([
@@ -40,9 +40,11 @@ const getDashboardStats = async (req, res) => {
       prisma.bill.count({
         where: { status: 'Pending' }
       }),
-      prisma.inventoryItem.count({
-        where: {
-          currentStock: { lte: 5 } // Simple threshold for now
+      // Get all inventory items to calculate low stock properly
+      prisma.inventoryItem.findMany({
+        select: {
+          currentStock: true,
+          minStock: true
         }
       }),
       prisma.emergencyCase.count({
@@ -54,6 +56,11 @@ const getDashboardStats = async (req, res) => {
         where: { status: 'On Duty' }
       })
     ]);
+
+    // Calculate low stock items count (currentStock <= minStock)
+    const lowStockItems = inventoryItems.filter(item =>
+      item.currentStock <= item.minStock
+    ).length;
 
     // Get previous period counts for trend calculation
     const [
@@ -163,13 +170,13 @@ const getAppointmentTrends = async (req, res) => {
   try {
     const trends = [];
     const today = new Date();
-    
+
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const startOfDay = new Date(date.setHours(0, 0, 0, 0));
       const endOfDay = new Date(date.setHours(23, 59, 59, 999));
-      
+
       const count = await prisma.appointment.count({
         where: {
           date: {
@@ -178,7 +185,7 @@ const getAppointmentTrends = async (req, res) => {
           }
         }
       });
-      
+
       trends.push({
         date: startOfDay.toISOString().split('T')[0],
         day: startOfDay.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -205,11 +212,11 @@ const getPatientGrowth = async (req, res) => {
   try {
     const growth = [];
     const today = new Date();
-    
+
     for (let i = 5; i >= 0; i--) {
       const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const nextMonth = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
-      
+
       const count = await prisma.patient.count({
         where: {
           createdAt: {
@@ -218,7 +225,7 @@ const getPatientGrowth = async (req, res) => {
           }
         }
       });
-      
+
       growth.push({
         month: date.toLocaleDateString('en-US', { month: 'short' }),
         patients: count,
@@ -245,11 +252,11 @@ const getRevenueTrends = async (req, res) => {
   try {
     const trends = [];
     const today = new Date();
-    
+
     for (let i = 5; i >= 0; i--) {
       const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const nextMonth = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
-      
+
       const revenue = await prisma.bill.aggregate({
         _sum: { totalAmount: true },
         where: {
@@ -260,7 +267,7 @@ const getRevenueTrends = async (req, res) => {
           }
         }
       });
-      
+
       trends.push({
         month: date.toLocaleDateString('en-US', { month: 'short' }),
         revenue: revenue._sum.totalAmount || 0,
@@ -389,15 +396,27 @@ const getRecentActivities = async (req, res) => {
 // Get low stock alerts
 const getLowStockAlerts = async (req, res) => {
   try {
-    const lowStockItems = await prisma.inventoryItem.findMany({
-      where: {
-        currentStock: { lte: 5 } // Simple threshold for now
+    // Get all inventory items and filter where currentStock <= minStock
+    const allItems = await prisma.inventoryItem.findMany({
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        currentStock: true,
+        minStock: true,
+        unit: true,
+        category: true,
+        supplier: true
       },
       orderBy: {
         currentStock: 'asc'
-      },
-      take: 10
+      }
     });
+
+    // Filter items where current stock is at or below minimum stock
+    const lowStockItems = allItems.filter(item =>
+      item.currentStock <= item.minStock
+    ).slice(0, 10); // Take top 10 most critical
 
     res.json({
       success: true,
@@ -419,7 +438,7 @@ const getUpcomingAppointments = async (req, res) => {
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const upcomingAppointments = await prisma.appointment.findMany({
       where: {
         date: {

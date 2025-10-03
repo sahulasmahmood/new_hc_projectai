@@ -125,9 +125,26 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
         prescriptionId: prescription.id,
       })
 
+      const { autoAddedItems } = response.data
+      let description = `Bill ${response.data.billNumber} has been created successfully.`
+      
+      if (autoAddedItems) {
+        const addedItems = []
+        if (autoAddedItems.consultationFee) {
+          addedItems.push("consultation fee")
+        }
+        if (autoAddedItems.medicines > 0) {
+          addedItems.push(`${autoAddedItems.medicines} medicine${autoAddedItems.medicines > 1 ? 's' : ''}`)
+        }
+        
+        if (addedItems.length > 0) {
+          description += ` Auto-added: ${addedItems.join(" and ")}.`
+        }
+      }
+
       toast({
         title: "Bill Generated",
-        description: `Bill ${response.data.billNumber} has been created successfully.`,
+        description,
       })
 
       setExistingBill(response.data)

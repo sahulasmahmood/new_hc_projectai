@@ -8,6 +8,7 @@ const {
   getAllBills,
   updatePaymentStatus,
   updateBillItemGst,
+  updateBillItem,
   deleteBillItem,
   getBillingAnalytics,
   getAvailableMedicines,
@@ -38,6 +39,9 @@ router.put("/:id/payment", updatePaymentStatus)
 
 // Update bill item GST
 router.put("/:billId/items/:itemId/gst", updateBillItemGst)
+
+// Update bill item (for editing consultation fee and medicines)
+router.put("/:billId/items/:itemId", updateBillItem)
 
 // Delete bill item
 router.delete("/:billId/items/:itemId", deleteBillItem)

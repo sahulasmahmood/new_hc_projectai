@@ -37,8 +37,22 @@ interface BillItem {
   totalPrice: number
   gstAmount: number
   gstRate?: {
+    id: number
     name: string
     rate: number
+  }
+  inventoryItem?: {
+    id: number
+    name: string
+    code: string
+    unit: string
+    pricePerUnit: number
+    currentStock: number
+    batches?: Array<{
+      batchNumber: string
+      expiryDate?: string
+      supplier?: string
+    }>
   }
 }
 
@@ -99,9 +113,11 @@ const Billing = () => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
   const [isViewBillOpen, setIsViewBillOpen] = useState(false)
   const [isAddItemOpen, setIsAddItemOpen] = useState(false)
+  const [isEditItemOpen, setIsEditItemOpen] = useState(false)
   const [isAddConsultationOpen, setIsAddConsultationOpen] = useState(false)
   const [isGstManagementOpen, setIsGstManagementOpen] = useState(false)
   const [isInvoiceViewOpen, setIsInvoiceViewOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<BillItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [availableMedicines, setAvailableMedicines] = useState([])
   const [medicineSearch, setMedicineSearch] = useState("")
@@ -268,6 +284,16 @@ const Billing = () => {
     quantity: 1,
     unitPrice: 0,
     description: "",
+    inventoryItemId: null,
+  })
+
+  // Edit item form state
+  const [editItemForm, setEditItemForm] = useState({
+    name: "",
+    quantity: 1,
+    unitPrice: 0,
+    description: "",
+    gstRateId: null,
     inventoryItemId: null,
   })
 
@@ -488,8 +514,17 @@ const Billing = () => {
       setIsAddItemOpen(false)
       setItemForm({ type: "medicine", name: "", quantity: 1, unitPrice: 0, description: "", inventoryItemId: null })
       setSelectedGst(null)
+      toast({
+        title: "Success",
+        description: `${itemForm.type === "medicine" ? "Medicine" : "Service"} added successfully`,
+      })
     } catch (error) {
       console.error("Error adding item:", error)
+      toast({
+        title: "Error",
+        description: `Failed to add ${itemForm.type}`,
+        variant: "destructive",
+      })
     }
   }
 
@@ -508,8 +543,17 @@ const Billing = () => {
       fetchBillDetails(selectedBill.id, false) // Don't auto-open invoice after adding consultation
       fetchBills()
       setIsAddConsultationOpen(false)
+      toast({
+        title: "Success",
+        description: "Consultation fee added successfully",
+      })
     } catch (error) {
       console.error("Error adding consultation fee:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add consultation fee",
+        variant: "destructive",
+      })
     }
   }
 
@@ -552,8 +596,69 @@ const Billing = () => {
       await api.delete(`/billing/${selectedBill.id}/items/${itemId}`)
       fetchBillDetails(selectedBill.id, false) // Don't auto-open invoice after deleting item
       fetchBills()
+      toast({
+        title: "Success",
+        description: "Item deleted successfully",
+      })
     } catch (error) {
       console.error("Error deleting item:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete item",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const editItem = (item: BillItem) => {
+    setEditingItem(item)
+    setEditItemForm({
+      name: item.itemName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      description: item.description || "",
+      gstRateId: item.gstRate?.id || null,
+      inventoryItemId: item.inventoryItem?.id || null,
+    })
+    setSelectedGst(item.gstRate || null)
+    setIsEditItemOpen(true)
+  }
+
+  const updateItem = async () => {
+    if (!selectedBill || !editingItem) return
+
+    try {
+      const updateData: any = {
+        itemName: editItemForm.name,
+        quantity: editItemForm.quantity,
+        unitPrice: editItemForm.unitPrice,
+        description: editItemForm.description,
+        gstRateId: selectedGst?.id || null,
+      }
+
+      // Only include inventoryItemId if it's different from the original
+      if (editItemForm.inventoryItemId !== (editingItem.inventoryItem?.id || null)) {
+        updateData.inventoryItemId = editItemForm.inventoryItemId
+      }
+
+      await api.put(`/billing/${selectedBill.id}/items/${editingItem.id}`, updateData)
+      
+      fetchBillDetails(selectedBill.id, false)
+      fetchBills()
+      setIsEditItemOpen(false)
+      setEditingItem(null)
+      setSelectedGst(null)
+      toast({
+        title: "Success",
+        description: "Item updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating item:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update item",
+        variant: "destructive",
+      })
     }
   }
 
@@ -969,15 +1074,35 @@ const Billing = () => {
                               GST: ₹{item.gstAmount.toFixed(2)} ({item.gstRate?.rate}%)
                             </span>
                           )}
+                          {item.inventoryItem && (
+                            <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              From Inventory
+                            </span>
+                          )}
                         </div>
                         {item.description && (
                           <div className="text-xs text-gray-500 mt-1">{item.description}</div>
                         )}
+                        {item.inventoryItem?.batches?.[0] && (
+                          <div className="text-xs text-blue-600 mt-1">
+                            Batch: {item.inventoryItem.batches[0].batchNumber}
+                            {item.inventoryItem.batches[0].expiryDate && (
+                              <span className="ml-2">
+                                Exp: {new Date(item.inventoryItem.batches[0].expiryDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {selectedBill.status !== "Paid" && selectedBill.status !== "Cancelled" && (
-                        <Button variant="outline" size="sm" onClick={() => deleteItem(item.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => editItem(item)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => deleteItem(item.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1281,6 +1406,125 @@ const Billing = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Item Dialog */}
+      <Dialog open={isEditItemOpen} onOpenChange={setIsEditItemOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Item</DialogTitle>
+          </DialogHeader>
+
+          {editingItem && (
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-sm text-gray-600">Item Type</div>
+                <div className="font-medium capitalize">{editingItem.itemType}</div>
+              </div>
+
+              <div>
+                <Label>Item Name</Label>
+                <Input
+                  value={editItemForm.name}
+                  onChange={(e) => setEditItemForm({ ...editItemForm, name: e.target.value })}
+                  placeholder="Enter item name"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    value={editItemForm.quantity}
+                    onChange={(e) => setEditItemForm({ ...editItemForm, quantity: Number(e.target.value) })}
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <Label>Unit Price (₹)</Label>
+                  <Input
+                    type="number"
+                    value={editItemForm.unitPrice}
+                    onChange={(e) => setEditItemForm({ ...editItemForm, unitPrice: Number(e.target.value) })}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label>GST Rate (Optional)</Label>
+                <GstSelector
+                  selectedGstId={selectedGst?.id}
+                  onGstChange={setSelectedGst}
+                  category={editingItem.itemType}
+                  placeholder="Select GST rate (optional)"
+                />
+              </div>
+
+              <div>
+                <Label>Description (Optional)</Label>
+                <Textarea
+                  value={editItemForm.description}
+                  onChange={(e) => setEditItemForm({ ...editItemForm, description: e.target.value })}
+                  placeholder="Additional details about the item"
+                />
+              </div>
+
+              {/* Show inventory info if linked */}
+              {editingItem.inventoryItem && (
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <div className="text-sm font-medium text-blue-800 mb-2">Inventory Information</div>
+                  <div className="text-sm text-blue-700">
+                    <div>Code: {editingItem.inventoryItem.code}</div>
+                    <div>Current Stock: {editingItem.inventoryItem.currentStock} {editingItem.inventoryItem.unit}</div>
+                    <div>Price per Unit: ₹{editingItem.inventoryItem.pricePerUnit}</div>
+                    {editingItem.inventoryItem.batches?.[0] && (
+                      <div className="mt-1 pt-1 border-t border-blue-200">
+                        <div>Latest Batch: {editingItem.inventoryItem.batches[0].batchNumber}</div>
+                        {editingItem.inventoryItem.batches[0].expiryDate && (
+                          <div>Expiry: {new Date(editingItem.inventoryItem.batches[0].expiryDate).toLocaleDateString()}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Price Calculation Preview */}
+              {editItemForm.quantity > 0 && editItemForm.unitPrice > 0 && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>₹{(editItemForm.quantity * editItemForm.unitPrice).toFixed(2)}</span>
+                    </div>
+                    {selectedGst && (
+                      <div className="flex justify-between text-blue-600">
+                        <span>GST ({selectedGst.rate}%):</span>
+                        <span>₹{((editItemForm.quantity * editItemForm.unitPrice * selectedGst.rate) / 100).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold border-t pt-1">
+                      <span>Total:</span>
+                      <span>₹{(editItemForm.quantity * editItemForm.unitPrice + (selectedGst ? (editItemForm.quantity * editItemForm.unitPrice * selectedGst.rate) / 100 : 0)).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button onClick={() => setIsEditItemOpen(false)} variant="outline">
+                  Cancel
+                </Button>
+                <Button onClick={updateItem} className="bg-medical-500 hover:bg-medical-600">
+                  Update Item
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* GST Management Dialog */}
       <Dialog open={isGstManagementOpen} onOpenChange={setIsGstManagementOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -1298,7 +1542,7 @@ const Billing = () => {
                   <Input
                     value={gstForm.name}
                     onChange={(e) => setGstForm({ ...gstForm, name: e.target.value })}
-                    placeholder="e.g., Medicine GST (5%)"
+                    placeholder="e.g., Medicine GST"
                   />
                 </div>
                 <div>

@@ -24,6 +24,55 @@ const generateBillNumber = async () => {
   return `${prefix}${String(nextNumber).padStart(4, "0")}`
 }
 
+// Helper function to calculate medicine quantity from frequency and duration
+const calculateMedicineQuantity = (frequency, duration) => {
+  try {
+    // Parse frequency (e.g., "2 times a day", "3x daily", "Once daily", "BID", "TID", "QID")
+    let timesPerDay = 1
+    const freqLower = frequency.toLowerCase()
+    
+    if (freqLower.includes('bid') || freqLower.includes('twice') || freqLower.includes('2 times') || freqLower.includes('2x')) {
+      timesPerDay = 2
+    } else if (freqLower.includes('tid') || freqLower.includes('thrice') || freqLower.includes('3 times') || freqLower.includes('3x')) {
+      timesPerDay = 3
+    } else if (freqLower.includes('qid') || freqLower.includes('4 times') || freqLower.includes('4x')) {
+      timesPerDay = 4
+    } else if (freqLower.includes('once') || freqLower.includes('1 time') || freqLower.includes('1x') || freqLower.includes('od')) {
+      timesPerDay = 1
+    } else {
+      // Try to extract number from frequency
+      const match = freqLower.match(/(\d+)/)
+      if (match) {
+        timesPerDay = parseInt(match[1])
+      }
+    }
+
+    // Parse duration (e.g., "7 days", "2 weeks", "1 month")
+    let totalDays = 7 // default
+    const durLower = duration.toLowerCase()
+    
+    if (durLower.includes('day')) {
+      const match = durLower.match(/(\d+)\s*days?/)
+      if (match) totalDays = parseInt(match[1])
+    } else if (durLower.includes('week')) {
+      const match = durLower.match(/(\d+)\s*weeks?/)
+      if (match) totalDays = parseInt(match[1]) * 7
+    } else if (durLower.includes('month')) {
+      const match = durLower.match(/(\d+)\s*months?/)
+      if (match) totalDays = parseInt(match[1]) * 30
+    } else {
+      // Try to extract number and assume days
+      const match = durLower.match(/(\d+)/)
+      if (match) totalDays = parseInt(match[1])
+    }
+
+    return Math.max(1, timesPerDay * totalDays) // Minimum 1 unit
+  } catch (error) {
+    console.error("Error calculating medicine quantity:", error)
+    return 1 // Default to 1 if calculation fails
+  }
+}
+
 // Create bill from prescription
 const createBillFromPrescription = async (req, res) => {
   try {
@@ -59,7 +108,7 @@ const createBillFromPrescription = async (req, res) => {
     // Generate bill number
     const billNumber = await generateBillNumber()
 
-    // Create bill without any items initially - let user add consultation fee manually
+    // Create bill initially
     const bill = await prisma.bill.create({
       data: {
         billNumber,
@@ -71,8 +120,111 @@ const createBillFromPrescription = async (req, res) => {
         totalAmount: 0,
         status: "Pending",
       },
+    })
+
+    // Auto-add consultation fee if doctor has consultation fee set
+    let consultationFeeAdded = false
+    if (prescription.doctorName) {
+      const doctor = await prisma.staff.findFirst({
+        where: { name: prescription.doctorName },
+        select: { consultationFee: true, name: true },
+      })
+
+      if (doctor && doctor.consultationFee && parseFloat(doctor.consultationFee) > 0) {
+        await prisma.billItem.create({
+          data: {
+            billId: bill.id,
+            itemType: "service",
+            itemName: `${prescription.appointment?.type || "Consultation"} - Dr. ${prescription.doctorName}`,
+            description: `${prescription.appointment?.type || "Consultation"} fee`,
+            quantity: 1,
+            unitPrice: parseFloat(doctor.consultationFee),
+            totalPrice: parseFloat(doctor.consultationFee),
+            gstAmount: 0,
+          },
+        })
+        consultationFeeAdded = true
+      }
+    }
+
+    // Auto-add medicines from prescription with inventory prices and calculated quantities
+    let medicinesAdded = 0
+    if (prescription.medications && prescription.medications.length > 0) {
+      for (const medication of prescription.medications) {
+        // Try to find this medicine in inventory
+        const inventoryMedicine = await prisma.inventoryItem.findFirst({
+          where: {
+            name: { contains: medication.medicineName, mode: "insensitive" },
+            currentStock: { gt: 0 },
+          },
+          include: {
+            batches: {
+              orderBy: { restockedAt: "desc" },
+              take: 1,
+            },
+          },
+        })
+
+        if (inventoryMedicine) {
+          // Calculate quantity based on frequency and duration
+          const calculatedQuantity = calculateMedicineQuantity(medication.frequency, medication.duration)
+          
+          // Get the latest batch for batch information
+          const latestBatch = inventoryMedicine.batches[0]
+          const batchInfo = latestBatch ? ` (Batch: ${latestBatch.batchNumber})` : ""
+          
+          await prisma.billItem.create({
+            data: {
+              billId: bill.id,
+              itemType: "medicine",
+              itemName: medication.medicineName,
+              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} for ${medication.duration}${batchInfo}`,
+              quantity: calculatedQuantity,
+              unitPrice: inventoryMedicine.pricePerUnit,
+              totalPrice: calculatedQuantity * inventoryMedicine.pricePerUnit,
+              inventoryItemId: inventoryMedicine.id,
+              gstAmount: 0,
+            },
+          })
+          medicinesAdded++
+        } else {
+          // Add medicine without inventory link (manual pricing required)
+          const calculatedQuantity = calculateMedicineQuantity(medication.frequency, medication.duration)
+          
+          await prisma.billItem.create({
+            data: {
+              billId: bill.id,
+              itemType: "medicine",
+              itemName: medication.medicineName,
+              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} for ${medication.duration} (Not in inventory)`,
+              quantity: calculatedQuantity,
+              unitPrice: 0, // Will need manual pricing
+              totalPrice: 0,
+              gstAmount: 0,
+            },
+          })
+          medicinesAdded++
+        }
+      }
+    }
+
+    // Recalculate bill totals
+    await recalculateBillTotals(bill.id)
+
+    // Fetch the complete bill with all items
+    const completeBill = await prisma.bill.findUnique({
+      where: { id: bill.id },
       include: {
-        items: true,
+        items: {
+          include: {
+            inventoryItem: {
+              select: { name: true, code: true, unit: true, pricePerUnit: true, currentStock: true },
+            },
+            gstRate: {
+              select: { name: true, rate: true },
+            },
+          },
+        },
         patient: {
           select: {
             name: true,
@@ -104,7 +256,13 @@ const createBillFromPrescription = async (req, res) => {
       },
     })
 
-    res.status(201).json(bill)
+    res.status(201).json({
+      ...completeBill,
+      autoAddedItems: {
+        consultationFee: consultationFeeAdded,
+        medicines: medicinesAdded,
+      },
+    })
   } catch (error) {
     console.error("Error creating bill from prescription:", error)
     res.status(500).json({ error: "Failed to create bill" })
@@ -270,7 +428,22 @@ const getBill = async (req, res) => {
         items: {
           include: {
             inventoryItem: {
-              select: { name: true, code: true, unit: true, pricePerUnit: true, currentStock: true },
+              select: { 
+                name: true, 
+                code: true, 
+                unit: true, 
+                pricePerUnit: true, 
+                currentStock: true,
+                batches: {
+                  orderBy: { restockedAt: "desc" },
+                  take: 1,
+                  select: {
+                    batchNumber: true,
+                    expiryDate: true,
+                    supplier: true,
+                  },
+                },
+              },
             },
             gstRate: {
               select: { name: true, rate: true },
@@ -545,6 +718,101 @@ const updateBillItemGst = async (req, res) => {
   }
 }
 
+// Update bill item (for editing consultation fee and medicines)
+const updateBillItem = async (req, res) => {
+  try {
+    const { billId, itemId } = req.params
+    const { itemName, description, quantity, unitPrice, gstRateId, inventoryItemId } = req.body
+
+    const bill = await prisma.bill.findUnique({
+      where: { id: Number.parseInt(billId) },
+    })
+
+    if (!bill) {
+      return res.status(404).json({ error: "Bill not found" })
+    }
+
+    if (bill.status === "Paid") {
+      return res.status(400).json({ error: "Cannot modify paid bill" })
+    }
+
+    const billItem = await prisma.billItem.findUnique({
+      where: { id: Number.parseInt(itemId) },
+    })
+
+    if (!billItem) {
+      return res.status(404).json({ error: "Bill item not found" })
+    }
+
+    // Validate required fields
+    if (!itemName || !quantity || !unitPrice) {
+      return res.status(400).json({ error: "Item name, quantity, and unit price are required" })
+    }
+
+    const newQuantity = Number.parseFloat(quantity)
+    const newUnitPrice = Number.parseFloat(unitPrice)
+    const newTotalPrice = newQuantity * newUnitPrice
+
+    let gstAmount = 0
+
+    // Calculate GST amount if GST rate is selected
+    if (gstRateId) {
+      const gstRate = await prisma.gstRate.findUnique({
+        where: { id: Number.parseInt(gstRateId) }
+      })
+      if (gstRate && gstRate.isActive) {
+        gstAmount = (newTotalPrice * gstRate.rate) / 100
+      }
+    }
+
+    // Update bill item - preserve existing inventoryItemId if not explicitly provided
+    const updatedBillItem = await prisma.billItem.update({
+      where: { id: Number.parseInt(itemId) },
+      data: {
+        itemName,
+        description: description || billItem.description,
+        quantity: newQuantity,
+        unitPrice: newUnitPrice,
+        totalPrice: newTotalPrice,
+        gstRateId: gstRateId ? Number.parseInt(gstRateId) : null,
+        gstAmount,
+        inventoryItemId: inventoryItemId !== undefined ? (inventoryItemId ? Number.parseInt(inventoryItemId) : null) : billItem.inventoryItemId,
+      },
+      include: {
+        inventoryItem: {
+          select: { 
+            name: true, 
+            code: true, 
+            unit: true, 
+            pricePerUnit: true, 
+            currentStock: true,
+            batches: {
+              orderBy: { restockedAt: "desc" },
+              take: 1,
+              select: {
+                batchNumber: true,
+                expiryDate: true,
+                supplier: true,
+              },
+            },
+          },
+        },
+        gstRate: {
+          select: { name: true, rate: true },
+        },
+      },
+    })
+
+    // Recalculate bill totals
+    await recalculateBillTotals(Number.parseInt(billId))
+
+    res.json(updatedBillItem)
+  } catch (error) {
+    console.error("Error updating bill item:", error)
+    res.status(500).json({ error: "Failed to update bill item" })
+  }
+}
+
 // Delete bill item
 const deleteBillItem = async (req, res) => {
   try {
@@ -789,6 +1057,7 @@ module.exports = {
   getAllBills,
   updatePaymentStatus,
   updateBillItemGst,
+  updateBillItem,
   deleteBillItem,
   getBillingAnalytics,
   getAvailableMedicines,
