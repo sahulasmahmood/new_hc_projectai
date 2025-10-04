@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ConsultationStartDialog from "@/components/consultation/ConsultationStartDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart } from "lucide-react";
+import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart, ArrowRight } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -47,6 +47,9 @@ interface Appointment {
   notes?: string;
   patientVisibleId?: string;
   consultationStartTime?: string;
+  consultationEndTime?: string;
+  actualStartTime?: string;
+  actualEndTime?: string;
 }
 
 const Appointments = () => {
@@ -101,16 +104,22 @@ const Appointments = () => {
   // Helper to get slot status
   const getSlotStatus = (time: string) => {
     if (!allTimeSlots.includes(time)) return 'unavailable';
+    
+    // Check if this time slot has a completed appointment
+    const appointmentAtTime = appointmentsForDate.find(a => a.time === time);
+    if (appointmentAtTime && appointmentAtTime.status === 'Completed') return 'completed';
+    
     if (bookedTimes.includes(time)) return 'booked';
     if (availableSlots.includes(time)) return 'available';
     return 'unavailable';
   };
 
-  // Helper to get slot color
+  // Helper to get slot color (Healthcare standard colors)
   const getSlotColor = (status: string) => {
     switch (status) {
       case 'available': return 'bg-green-100 text-green-800 border-green-400 hover:bg-green-200';
-      case 'booked': return 'bg-red-100 text-red-800 border-red-400 cursor-not-allowed opacity-60';
+      case 'booked': return 'bg-blue-100 text-blue-800 border-blue-400 cursor-not-allowed opacity-60';
+      case 'completed': return 'bg-gray-100 text-gray-600 border-gray-400 cursor-not-allowed opacity-60';
       case 'unavailable': return 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-50';
       default: return 'bg-gray-100 text-gray-400 border-gray-300';
     }
@@ -202,9 +211,40 @@ const Appointments = () => {
     }
   };
 
-  const handleStartConsultationClick = (appointment: Appointment) => {
-    setSelectedAppointmentForConsultation(appointment);
-    setConsultationDialogOpen(true);
+  const handleStartConsultationClick = async (appointment: Appointment) => {
+    // Direct navigation to patient consultation without dialog
+    try {
+      // Start the consultation via API
+      const response = await api.post(
+        `/appointments/${appointment.id}/start-consultation`,
+        { forceStart: false }
+      );
+
+      toast({
+        title: "Consultation Started",
+        description: `Consultation started for ${appointment.patientName}`,
+      });
+
+      // Navigate directly to patient exam
+      navigate(`/patient-exam?patientId=${appointment.patientId}&role=doctor&appointmentId=${appointment.id}`);
+    } catch (error: unknown) {
+      // If there's an error, show the dialog for force start option
+      const errorResponse = (error as { response?: { data?: { error?: string } } })?.response?.data;
+      const errorMessage = errorResponse?.error || "";
+      
+      // If it's a timing issue or slot ended, show the dialog
+      if (errorMessage.includes("early") || errorMessage.includes("late") || errorMessage.includes("overdue") || errorMessage.includes("ended") || errorMessage.includes("Cannot start")) {
+        setSelectedAppointmentForConsultation(appointment);
+        setConsultationDialogOpen(true);
+      } else {
+        // For other errors, show toast
+        toast({
+          title: "Error",
+          description: errorMessage || "Failed to start consultation",
+          variant: "destructive"
+        });
+      }
+    }
   };
 
   const handleRecordVitalsClick = (appointment: Appointment) => {
@@ -530,6 +570,24 @@ const Appointments = () => {
                           <span>•</span>
                           <span className="font-medium">{appointment.type}</span>
                         </div>
+                        {appointment.status === 'Consultation Started' && appointment.actualStartTime && (
+                          <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            <Clock className="h-3 w-3" />
+                            <span>Started: {new Date(appointment.actualStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                            {appointment.consultationEndTime && (
+                              <>
+                                <span>•</span>
+                                <span>Expected End: {new Date(appointment.consultationEndTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {appointment.status === 'Completed' && appointment.actualStartTime && appointment.actualEndTime && (
+                          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                            <Clock className="h-3 w-3" />
+                            <span>Duration: {new Date(appointment.actualStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - {new Date(appointment.actualEndTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        )}
                         {appointment.notes && (
                           <p className="text-sm text-gray-500">{appointment.notes}</p>
                         )}
@@ -621,10 +679,10 @@ const Appointments = () => {
                           </Badge>
                           <Button 
                             size="sm" 
-                            variant="outline"
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
                             onClick={() => navigate(`/patient-exam?patientId=${appointment.patientId}&role=doctor&appointmentId=${appointment.id}`)}
                           >
-                            Go to Patient
+                            <ArrowRight className="h-4 w-4" />
                           </Button>
                         </>
                       )}
@@ -797,6 +855,7 @@ const Appointments = () => {
                 >
                   {time}
                   {status === 'booked' && <span className="ml-2 text-xs">(Booked)</span>}
+                  {status === 'completed' && <span className="ml-2 text-xs">(Completed)</span>}
                   {status === 'unavailable' && <span className="ml-2 text-xs">(Unavailable)</span>}
                 </Button>
               );

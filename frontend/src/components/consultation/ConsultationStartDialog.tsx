@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ interface ConsultationStartDialogProps {
     consultationStartTime?: string;
     actualStartTime?: string;
     status: string;
+    patientId?: number;
   }) => void;
 }
 
@@ -47,6 +49,7 @@ const ConsultationStartDialog = ({
   onConsultationStarted,
 }: ConsultationStartDialogProps) => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [validation, setValidation] = useState<ValidationResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -92,6 +95,12 @@ const ConsultationStartDialog = ({
 
       onConsultationStarted(response.data.appointment);
       onClose();
+      
+      // Navigate directly to patient exam
+      const patientId = response.data.appointment.patientId;
+      if (patientId) {
+        navigate(`/patient-exam?patientId=${patientId}&role=doctor&appointmentId=${appointmentId}`);
+      }
     } catch (error: unknown) {
       console.error("Error starting consultation:", error);
       const errorResponse = (error as { response?: { data?: { error?: string, patientId?: number } } })?.response?.data;

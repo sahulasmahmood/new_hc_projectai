@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope, Clock, X, AlertTriangle } from "lucide-react";
+import { Users, Search, Phone, Mail, Calendar, Shield, Edit, Stethoscope, Clock, X, AlertTriangle, Copy, Check } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -75,6 +75,7 @@ const Patients = () => {
     activeTab: string;
     prescriptionToOpen?: any;
   }>({ patient: null, activeTab: 'prescriptions' });
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState(() => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
@@ -301,6 +302,24 @@ const Patients = () => {
     }
   };
 
+  const handleCopyToClipboard = async (text: string, fieldId: string, fieldName: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      toast({
+        title: "Copied!",
+        description: `${fieldName} copied to clipboard`,
+      });
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      toast({
+        title: "Failed to copy",
+        description: "Could not copy to clipboard",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -470,22 +489,54 @@ const Patients = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Phone className="h-4 w-4 text-gray-400" />
-                      <span>{patient.phone}</span>
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-gray-400" />
+                        <span className="font-mono text-gray-700">{patient.visibleId}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 hover:bg-blue-50"
+                        onClick={() => handleCopyToClipboard(patient.visibleId, `id-${patient.id}`, "Patient ID")}
+                      >
+                        {copiedField === `id-${patient.id}` ? (
+                          <Check className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-blue-500" />
+                        )}
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-gray-400" />
+                        <span>{patient.phone}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 hover:bg-blue-50"
+                        onClick={() => handleCopyToClipboard(patient.phone, `phone-${patient.id}`, "Phone Number")}
+                      >
+                        {copiedField === `phone-${patient.id}` ? (
+                          <Check className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-blue-500" />
+                        )}
+                      </Button>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Mail className="h-4 w-4 text-gray-400" />
                       <span className="truncate">{patient.email}</span>
                     </div>
-                                      <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span>Last visit: {patient.lastVisit ? new Date(patient.lastVisit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'No visits yet'}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span>Registered: {new Date(patient.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                  </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <span>Last visit: {patient.lastVisit ? new Date(patient.lastVisit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'No visits yet'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <span>Registered: {new Date(patient.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    </div>
                   {patient.consultationStatus === 'active' && patient.consultationStartTime && (
                     <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
                       <Clock className="h-4 w-4" />

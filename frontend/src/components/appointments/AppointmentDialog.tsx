@@ -93,6 +93,7 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
   const [showCreatePatient, setShowCreatePatient] = useState<boolean>(false);
   const [matchingPatients, setMatchingPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [selectedPatientVisibleId, setSelectedPatientVisibleId] = useState<string>("");
   const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
   // Use appointment settings hook
@@ -175,14 +176,31 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
   };
 
   const handlePhoneChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const phone = e.target.value;
-    setFormData({ ...formData, patientPhone: phone });
+    const phoneOrId = e.target.value;
+    setFormData({ ...formData, patientPhone: phoneOrId });
     setSelectedPatientId(null);
+    setSelectedPatientVisibleId("");
     setMatchingPatients([]);
 
-    if (phone.length >= 8) {
+    if (phoneOrId.length >= 3) {
       try {
-        const res = await api.get(`/patients/search/by-phone?phone=${phone}`);
+        // Try searching by phone first
+        let res = await api.get(`/patients/search/by-phone?phone=${phoneOrId}`);
+        
+        // If no results by phone, try searching by patient ID (visibleId)
+        if (!res.data || res.data.length === 0) {
+          const allPatientsRes = await api.get(`/patients?search=${phoneOrId}`);
+          if (allPatientsRes.data && allPatientsRes.data.length > 0) {
+            // Filter patients that match the visibleId
+            const matchedById = allPatientsRes.data.filter((p: Patient) => 
+              p.visibleId && p.visibleId.toLowerCase().includes(phoneOrId.toLowerCase())
+            );
+            if (matchedById.length > 0) {
+              res = { data: matchedById };
+            }
+          }
+        }
+        
         if (Array.isArray(res.data) && res.data.length > 1) {
           setMatchingPatients(res.data);
           setPatientFound(true);
@@ -190,8 +208,9 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
           setFormData(prev => ({ ...prev, patientName: "" }));
         } else if (Array.isArray(res.data) && res.data.length === 1) {
           setMatchingPatients([]);
-          setFormData(prev => ({ ...prev, patientName: res.data[0].name }));
+          setFormData(prev => ({ ...prev, patientName: res.data[0].name, patientPhone: res.data[0].phone }));
           setSelectedPatientId(String(res.data[0].id));
+          setSelectedPatientVisibleId(res.data[0].visibleId || "");
           setPatientFound(true);
           setShowCreatePatient(false);
         } else {
@@ -210,6 +229,7 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
       setFormData(prev => ({ ...prev, patientName: "" }));
       setMatchingPatients([]);
       setSelectedPatientId(null);
+      setSelectedPatientVisibleId("");
     }
   };
 
@@ -293,6 +313,7 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
       setShowCreatePatient(false);
       setMatchingPatients([]);
       setSelectedPatientId(null);
+      setSelectedPatientVisibleId("");
     }
   }, [open, mode, initialFormData]);
 
@@ -310,6 +331,7 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
     setShowCreatePatient(false);
     setMatchingPatients([]);
     setSelectedPatientId(null);
+    setSelectedPatientVisibleId("");
   }, [selectedDate, selectedTime]);
 
   return (
@@ -333,12 +355,12 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="patientPhone">Patient Phone</Label>
+            <Label htmlFor="patientPhone">Patient Phone / ID {selectedPatientVisibleId && <span className="text-xs text-gray-500 font-mono ml-2">({selectedPatientVisibleId})</span>}</Label>
             <Input
               id="patientPhone"
               value={formData.patientPhone}
               onChange={handlePhoneChange}
-              placeholder="Enter phone number"
+              placeholder="Enter phone number or patient ID"
               required
             />
             {patientFound === false && (
@@ -355,7 +377,10 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
                 onValueChange={(id) => {
                   setSelectedPatientId(id);
                   const patient = matchingPatients.find(p => String(p.id) === id);
-                  if (patient) setFormData(prev => ({ ...prev, patientName: patient.name }));
+                  if (patient) {
+                    setFormData(prev => ({ ...prev, patientName: patient.name }));
+                    setSelectedPatientVisibleId(patient.visibleId || "");
+                  }
                 }}
               >
                 <SelectTrigger>
