@@ -47,7 +47,9 @@ export interface Appointment {
   duration: string;
   notes?: string;
   status: string;
-  patientId?: string | number; // Added patientId for unique identification
+  patientId?: string | number;
+  doctorId?: number;
+  doctorName?: string;
 }
 
 interface Patient {
@@ -66,6 +68,7 @@ interface AppointmentDialogProps {
   onClose?: () => void;
   selectedDate?: string | Date;
   selectedTime?: string;
+  selectedDoctor?: { id: number; name: string; specialization: string } | null;
 }
 
 interface AppointmentFormData {
@@ -77,7 +80,7 @@ interface AppointmentFormData {
   notes: string;
 }
 
-const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, selectedTime }: AppointmentDialogProps) => {
+const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, selectedTime, selectedDoctor }: AppointmentDialogProps) => {
   const [open, setOpen] = useState<boolean>(false);
   const initialFormData = useMemo<AppointmentFormData>(() => ({
     patientName: "",
@@ -112,13 +115,13 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
   const slotDuration: number = parseInt(settings.defaultDuration);
   const appointmentTypes: string[] = settings.appointmentTypes;
 
-  // Load existing appointments for the selected date
+  // Load existing appointments for the selected date and doctor
   useEffect(() => {
-    if (formData.date) {
+    if (formData.date && selectedDoctor) {
       loadExistingAppointments();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.date]);
+  }, [formData.date, selectedDoctor]);
 
   const loadExistingAppointments = async () => {
     try {
@@ -127,7 +130,14 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
       const month = String(formData.date.getMonth() + 1).padStart(2, '0');
       const day = String(formData.date.getDate()).padStart(2, '0');
       const dateString = `${year}-${month}-${day}`;
-      const response = await api.get(`/appointments?date=${dateString}`);
+      
+      // Filter appointments by selected doctor if doctor is selected
+      let url = `/appointments?date=${dateString}`;
+      if (selectedDoctor?.id) {
+        url += `&doctorId=${selectedDoctor.id}`;
+      }
+      
+      const response = await api.get(url);
       setExistingAppointments(response.data || []);
     } catch (error) {
       console.log("Failed to load existing appointments");
@@ -184,20 +194,24 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
 
     if (phoneOrId.length >= 3) {
       try {
-        // Try searching by phone first
-        let res = await api.get(`/patients/search/by-phone?phone=${phoneOrId}`);
+        let res = { data: [] };
         
-        // If no results by phone, try searching by patient ID (visibleId)
-        if (!res.data || res.data.length === 0) {
-          const allPatientsRes = await api.get(`/patients?search=${phoneOrId}`);
-          if (allPatientsRes.data && allPatientsRes.data.length > 0) {
-            // Filter patients that match the visibleId
-            const matchedById = allPatientsRes.data.filter((p: Patient) => 
-              p.visibleId && p.visibleId.toLowerCase().includes(phoneOrId.toLowerCase())
-            );
-            if (matchedById.length > 0) {
-              res = { data: matchedById };
+        // Try searching by patient ID first (visibleId)
+        try {
+          const idSearchRes = await api.get(`/patients/search/by-id?id=${phoneOrId}`);
+          if (idSearchRes.data && idSearchRes.data.length > 0) {
+            res = { data: idSearchRes.data };
+          }
+        } catch (idError) {
+          // If ID search fails, try phone search
+          try {
+            const phoneSearchRes = await api.get(`/patients/search/by-phone?phone=${phoneOrId}`);
+            if (phoneSearchRes.data && phoneSearchRes.data.length > 0) {
+              res = { data: phoneSearchRes.data };
             }
+          } catch (phoneError) {
+            // Both failed, patient not found
+            res = { data: [] };
           }
         }
         
@@ -218,7 +232,7 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
           setShowCreatePatient(true);
           setFormData(prev => ({ ...prev, patientName: "" }));
         }
-      } catch {
+      } catch (error) {
         setPatientFound(false);
         setShowCreatePatient(true);
         setFormData(prev => ({ ...prev, patientName: "" }));
@@ -291,8 +305,10 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
       date: formattedDate,
       id: appointment?.id || Date.now(),
       status: appointment?.status || "Confirmed",
-      // Add selectedPatientId to appointment data
-      patientId: selectedPatientId || undefined
+      // Add selectedPatientId and doctorId to appointment data
+      patientId: selectedPatientId || undefined,
+      doctorId: selectedDoctor?.id,
+      doctorName: selectedDoctor?.name
     };
     // Await onSave in case it's async
     const result = await onSave(appointmentData);

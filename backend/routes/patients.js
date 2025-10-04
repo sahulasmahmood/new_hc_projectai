@@ -8,6 +8,7 @@ const {
   deletePatient,
   updateABHAStatus,
   getPatientByPhone,
+  getPatientByVisibleId,
   getActiveConsultations
 } = require('../controllers/patients/patients');
 const upload = require('../utils/upload');
@@ -20,6 +21,9 @@ router.get('/', getAllPatients);
 
 // Get patient by phone
 router.get('/search/by-phone', getPatientByPhone);
+
+// Get patient by visible ID
+router.get('/search/by-id', getPatientByVisibleId);
 
 // Get patient by ID
 router.get('/:id', getPatientById);

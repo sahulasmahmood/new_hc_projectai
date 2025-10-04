@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal";
 import api from "@/lib/api";
 
 const permissions = [
@@ -38,6 +39,13 @@ interface Role {
   permissions: Permission[];
 }
 
+interface StaffMember {
+  id: number;
+  name: string;
+  employeeId: string;
+  status: string;
+}
+
 export default function RolesResponsibility() {
   const { toast } = useToast();
   const [role, setRole] = useState("");
@@ -46,6 +54,17 @@ export default function RolesResponsibility() {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [staffByRole, setStaffByRole] = useState<Record<string, StaffMember[]>>({});
+  const [expandedRole, setExpandedRole] = useState<number | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{
+    roleId: number | null;
+    roleName: string;
+    warningMessage?: string;
+  }>({
+    roleId: null,
+    roleName: "",
+    warningMessage: undefined
+  });
 
   useEffect(() => {
     fetchRoles();
@@ -56,6 +75,8 @@ export default function RolesResponsibility() {
       const response = await api.get('/staff/roles-permissions');
       if (response.data.success) {
         setRoles(response.data.roles);
+        // Fetch staff for each role
+        fetchStaffByRole(response.data.roles);
       }
     } catch (error) {
       console.error('Error fetching roles:', error);
@@ -64,6 +85,30 @@ export default function RolesResponsibility() {
         description: "Failed to fetch roles",
         variant: "destructive"
       });
+    }
+  };
+
+  const fetchStaffByRole = async (rolesList: Role[]) => {
+    try {
+      const staffResponse = await api.get('/staff');
+      const allStaff = staffResponse.data;
+      
+      // Group staff by role
+      const grouped: Record<string, StaffMember[]> = {};
+      rolesList.forEach(role => {
+        grouped[role.role] = allStaff
+          .filter((staff: any) => staff.role === role.role)
+          .map((staff: any) => ({
+            id: staff.id,
+            name: staff.name,
+            employeeId: staff.employeeId,
+            status: staff.status
+          }));
+      });
+      
+      setStaffByRole(grouped);
+    } catch (error) {
+      console.error('Error fetching staff by role:', error);
     }
   };
 
@@ -187,23 +232,47 @@ export default function RolesResponsibility() {
     setEditId(role.id.toString());
   };
 
-  const handleDelete = async (roleId: number) => {
+  const handleDeleteClick = (roleId: number, roleName: string) => {
+    setDeleteModal({
+      roleId,
+      roleName,
+      warningMessage: undefined
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.roleId) return;
+
     try {
       await api.delete('/staff/roles-permissions', {
-        data: { id: roleId }
+        data: { id: deleteModal.roleId }
       });
       toast({
         title: "Success",
         description: "Role deleted successfully"
       });
       fetchRoles();
-    } catch (error) {
+      setDeleteModal({ roleId: null, roleName: "", warningMessage: undefined });
+    } catch (error: any) {
       console.error('Error deleting role:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete role",
-        variant: "destructive"
-      });
+      
+      // Check if it's a role-in-use error
+      if (error.response?.data?.staffMembers) {
+        const staffCount = error.response.data.staffMembers.length;
+        const staffNames = error.response.data.staffMembers.map((s: any) => s.name).join(", ");
+        toast({
+          title: "Cannot Delete Role",
+          description: `This role is currently assigned to ${staffCount} staff member(s): ${staffNames}. Please reassign these staff members to a different role before deleting.`,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.response?.data?.error || "Failed to delete role",
+          variant: "destructive"
+        });
+      }
+      setDeleteModal({ roleId: null, roleName: "", warningMessage: undefined });
     }
   };
 
@@ -380,50 +449,106 @@ export default function RolesResponsibility() {
               </thead>
               <tbody>
                 {roles.map((role, index) => (
-                  <tr key={role.id} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="p-3 text-sm text-gray-700">{index + 1}</td>
-                    <td className="p-3 text-sm text-gray-700 font-medium">{role.role}</td>
-                    <td className="p-3 text-sm text-gray-700">
-                      <div className="max-w-md">
-                        {role.permissions.map((permission) => (
-                          <div key={permission.page} className="mb-1 text-sm">
-                            <span className="font-medium">{permission.page}:</span>{" "}
-                            <span className="text-medical-600">
-                              {Object.entries(permission.actions)
-                                .filter(([, value]) => value)
-                                .map(([key]) => key)
-                                .join(", ")}
-                            </span>
+                  <React.Fragment key={role.id}>
+                    <tr className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="p-3 text-sm text-gray-700">{index + 1}</td>
+                      <td className="p-3 text-sm text-gray-700">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{role.role}</span>
+                          {staffByRole[role.role] && staffByRole[role.role].length > 0 && (
+                            <button
+                              onClick={() => setExpandedRole(expandedRole === role.id ? null : role.id)}
+                              className="text-xs bg-medical-100 text-medical-700 px-2 py-1 rounded-full hover:bg-medical-200"
+                            >
+                              {staffByRole[role.role].length} staff
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-sm text-gray-700">
+                        <div className="max-w-md">
+                          {Array.isArray(role.permissions) && role.permissions.length > 0 ? (
+                            role.permissions.map((permission) => (
+                              <div key={permission.page} className="mb-1 text-sm">
+                                <span className="font-medium">{permission.page}:</span>{" "}
+                                <span className="text-medical-600">
+                                  {permission.actions && typeof permission.actions === 'object' 
+                                    ? Object.entries(permission.actions)
+                                        .filter(([, value]) => value)
+                                        .map(([key]) => key)
+                                        .join(", ")
+                                    : 'No permissions'}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-gray-500 text-xs">No permissions configured</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleEdit(role)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Edit className="h-4 w-4 text-medical-600" />
+                          </Button>
+                          <DeleteConfirmModal
+                            title="Delete Role"
+                            itemName={role.role}
+                            description={`This action cannot be undone. This will permanently delete the role "${role.role}".`}
+                            onConfirm={() => handleDeleteConfirm()}
+                            trigger={
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteClick(role.id, role.role)}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Trash2 className="h-4 w-4 text-red-600" />
+                              </Button>
+                            }
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedRole === role.id && staffByRole[role.role] && staffByRole[role.role].length > 0 && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={4} className="p-3">
+                          <div className="ml-8">
+                            <div className="text-xs font-semibold text-gray-600 mb-2">Staff Members with {role.role} Role:</div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                              {staffByRole[role.role].map((staff) => (
+                                <div key={staff.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border">
+                                  <div className="flex-1">
+                                    <div className="font-medium text-gray-900">{staff.name}</div>
+                                    <div className="text-gray-500">{staff.employeeId}</div>
+                                  </div>
+                                  <span className={`px-2 py-1 rounded text-xs ${
+                                    staff.status === 'On Duty' || staff.status === 'Active' 
+                                      ? 'bg-green-100 text-green-700' 
+                                      : 'bg-gray-100 text-gray-700'
+                                  }`}>
+                                    {staff.status}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleEdit(role)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Edit className="h-4 w-4 text-medical-600" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(role.id)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+
+
       </CardContent>
     </Card>
   );

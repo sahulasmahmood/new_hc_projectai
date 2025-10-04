@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ConsultationStartDialog from "@/components/consultation/ConsultationStartDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart, ArrowRight } from "lucide-react";
+import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart, ArrowRight, UserCheck } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -33,10 +33,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FilterValues } from "@/components/appointments/FilterDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface Doctor {
+  id: number;
+  name: string;
+  specialization: string;
+}
 
 interface Appointment {
   id: number;
-  patientId: number; // Add this line
+  patientId: number;
   patientName: string;
   patientPhone: string;
   date: string;
@@ -50,6 +57,8 @@ interface Appointment {
   consultationEndTime?: string;
   actualStartTime?: string;
   actualEndTime?: string;
+  doctorId?: number;
+  doctorName?: string;
 }
 
 const Appointments = () => {
@@ -77,6 +86,9 @@ const Appointments = () => {
   const [selectedAppointmentForConsultation, setSelectedAppointmentForConsultation] = useState<Appointment | null>(null);
   const [vitalsDialogOpen, setVitalsDialogOpen] = useState(false);
   const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState<Appointment | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   // Use appointment settings hook
   const { 
@@ -86,14 +98,20 @@ const Appointments = () => {
     getAvailableTimeSlots
   } = useAppointmentSettings();
 
-  // Get all possible slots for the selected date
-  const allTimeSlots = getActiveTimeSlots().map(slot => slot.time);
-  // Get appointments for the selected date
-  const appointmentsForDate = appointments.filter(a => a.date.split('T')[0] === selectedDate);
+  // Get all possible slots for the selected date (use appointment settings time slots)
+  // For now, all doctors share the same time slots from appointment settings
+  // In future, can be customized per doctor
+  const allTimeSlots = selectedDoctor ? getActiveTimeSlots().map(slot => slot.time) : [];
+  // Get appointments for the selected date and doctor
+  const appointmentsForDate = appointments.filter(a => {
+    const dateMatch = a.date.split('T')[0] === selectedDate;
+    const doctorMatch = selectedDoctor ? a.doctorId === selectedDoctor.id : true;
+    return dateMatch && doctorMatch;
+  });
   // Get booked times
   const bookedTimes = appointmentsForDate.map(a => a.time);
-  // Get available slots for the selected date
-  const availableSlots = getAvailableTimeSlots(new Date(selectedDate), appointmentsForDate).map(slot => slot.time);
+  // Get available slots for the selected date (only if doctor is selected)
+  const availableSlots = selectedDoctor ? getAvailableTimeSlots(new Date(selectedDate), appointmentsForDate).map(slot => slot.time) : [];
   
   // Daily appointments counter
   const dailyAppointmentsCount = appointmentsForDate.length;
@@ -103,7 +121,7 @@ const Appointments = () => {
 
   // Helper to get slot status
   const getSlotStatus = (time: string) => {
-    if (!allTimeSlots.includes(time)) return 'unavailable';
+    if (!selectedDoctor || !allTimeSlots.includes(time)) return 'unavailable';
     
     // Check if this time slot has a completed appointment
     const appointmentAtTime = appointmentsForDate.find(a => a.time === time);
@@ -119,7 +137,7 @@ const Appointments = () => {
     switch (status) {
       case 'available': return 'bg-green-100 text-green-800 border-green-400 hover:bg-green-200';
       case 'booked': return 'bg-blue-100 text-blue-800 border-blue-400 cursor-not-allowed opacity-60';
-      case 'completed': return 'bg-gray-100 text-gray-600 border-gray-400 cursor-not-allowed opacity-60';
+      case 'completed': return 'bg-gray-200 text-gray-700 border-gray-500 cursor-not-allowed opacity-80';
       case 'unavailable': return 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-50';
       default: return 'bg-gray-100 text-gray-400 border-gray-300';
     }
@@ -143,10 +161,29 @@ const Appointments = () => {
     }
   }, [toast]);
 
+  // Fetch doctors
+  const fetchDoctors = useCallback(async () => {
+    try {
+      setLoadingDoctors(true);
+      const response = await api.get('/doctors');
+      setDoctors(response.data);
+      // Don't auto-select any doctor - let user choose
+    } catch (error: unknown) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch doctors",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingDoctors(false);
+    }
+  }, [toast]);
+
   // Fetch appointments on component mount
   useEffect(() => {
     fetchAppointments();
-  }, [fetchAppointments]);
+    fetchDoctors();
+  }, [fetchAppointments, fetchDoctors]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -233,7 +270,7 @@ const Appointments = () => {
       const errorMessage = errorResponse?.error || "";
       
       // If it's a timing issue or slot ended, show the dialog
-      if (errorMessage.includes("early") || errorMessage.includes("late") || errorMessage.includes("overdue") || errorMessage.includes("ended") || errorMessage.includes("Cannot start")) {
+      if (errorMessage.includes("early") || errorMessage.includes("late") || errorMessage.includes("overdue") || errorMessage.includes("ended") || errorMessage.includes("Cannot start") || errorMessage.includes("starting")) {
         setSelectedAppointmentForConsultation(appointment);
         setConsultationDialogOpen(true);
       } else {
@@ -365,6 +402,12 @@ const Appointments = () => {
       return false;
     }
     
+    // Doctor filter - only show appointments for selected doctor
+    if (selectedDoctor && appointment.doctorId !== selectedDoctor.id) {
+      console.log('Doctor mismatch');
+      return false;
+    }
+    
     // Type filter
     if ((filters.type && filters.type.length > 0) && !filters.type.includes(appointment.type)) {
       return false;
@@ -484,7 +527,7 @@ const Appointments = () => {
         </div>
       </div>
 
-      {/* Date Selector */}
+      {/* Date and Doctor Selector */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
@@ -495,6 +538,33 @@ const Appointments = () => {
               onChange={(e) => handleDateChange(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-500"
             />
+            
+            <div className="flex items-center gap-2 ml-6">
+              <UserCheck className="h-4 w-4 text-medical-500" />
+              <label className="text-sm font-medium text-gray-700">Doctor:</label>
+              <Select 
+                value={selectedDoctor?.id.toString() || ""} 
+                onValueChange={(value) => {
+                  const doctor = doctors.find(d => d.id.toString() === value);
+                  setSelectedDoctor(doctor || null);
+                }}
+                disabled={loadingDoctors}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder={loadingDoctors ? "Loading..." : "Select Doctor"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {doctors.map((doctor) => (
+                    <SelectItem key={doctor.id} value={doctor.id.toString()}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{doctor.name}</span>
+                        <span className="text-xs text-gray-500">{doctor.specialization}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="ml-auto flex items-center gap-4">
               <div className={`text-sm font-medium ${
                 isDailyLimitReached ? 'text-red-600' : 
@@ -574,12 +644,7 @@ const Appointments = () => {
                           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
                             <Clock className="h-3 w-3" />
                             <span>Started: {new Date(appointment.actualStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-                            {appointment.consultationEndTime && (
-                              <>
-                                <span>•</span>
-                                <span>Expected End: {new Date(appointment.consultationEndTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-                              </>
-                            )}
+
                           </div>
                         )}
                         {appointment.status === 'Completed' && appointment.actualStartTime && appointment.actualEndTime && (
@@ -595,7 +660,7 @@ const Appointments = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      {appointment.status !== 'Consultation Started' && (
+                      {appointment.status !== 'Consultation Started' && appointment.status !== 'Aborted' && (
                         <Button 
                           variant="outline" 
                           size="sm"
@@ -751,6 +816,7 @@ const Appointments = () => {
       onSave={handleSaveAppointment}
       selectedDate={slotToBook.date}
       selectedTime={slotToBook.time}
+      selectedDoctor={selectedDoctor}
       onClose={() => {
         setDialogOpen(false);
         setSlotToBook(null);
@@ -764,6 +830,7 @@ const Appointments = () => {
           onSave={handleSaveAppointment}
           selectedDate={selectedDate}
           selectedTime={undefined}
+          selectedDoctor={selectedDoctor}
           onClose={() => setDialogOpen(false)}
         />
       )}
@@ -828,17 +895,47 @@ const Appointments = () => {
       {/* Time Slots */}
       <Card>
         <CardHeader>
-          <CardTitle>Available Time Slots</CardTitle>
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md px-4 py-2 my-2">
-            <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
-            <span className="text-sm font-medium text-blue-800">Click an <span className="font-semibold underline">available time slot</span> below to schedule a new appointment.</span>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            Available Time Slots
+            {selectedDoctor && (
+              <Badge className="bg-medical-100 text-medical-800">
+                {selectedDoctor.name} - {selectedDoctor.specialization}
+              </Badge>
+            )}
+          </CardTitle>
+          {selectedDoctor ? (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md px-4 py-2 my-2">
+              <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
+              <span className="text-sm font-medium text-blue-800">
+                Click an <span className="font-semibold underline">available time slot</span> below to schedule a new appointment with {selectedDoctor.name}.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-md px-4 py-2 my-2">
+              <svg className="h-5 w-5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
+              <span className="text-sm font-medium text-yellow-800">
+                Please select a doctor first to view available time slots.
+              </span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {settingsLoading ? (
             <div className="text-center py-4">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-medical-500 mx-auto"></div>
               <p className="mt-2 text-gray-600">Loading time slots...</p>
+            </div>
+          ) : !selectedDoctor ? (
+            <div className="text-center py-8">
+              <UserCheck className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Doctor Selected</h3>
+              <p className="text-gray-500">Please select a doctor from the dropdown above to view available time slots.</p>
+            </div>
+          ) : allTimeSlots.length === 0 ? (
+            <div className="text-center py-8">
+              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Time Slots Available</h3>
+              <p className="text-gray-500">No time slots are configured in appointment settings. Please contact administrator.</p>
             </div>
           ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">

@@ -15,6 +15,7 @@ const reportsRouter = require('./reports');
 const billingRouter = require("./billing")
 const gstRouter = require('./gst');
 const dashboardRouter = require('./dashboard');
+const doctorsRouter = require('./doctors');
 /* const categoriesRouter = require('./categories');
 const suppliersRouter = require('./suppliers'); */
 
@@ -34,6 +35,7 @@ router.use('/reports', reportsRouter);
 router.use("/billing", billingRouter)
 router.use('/gst', gstRouter);
 router.use('/dashboard', dashboardRouter);
+router.use('/doctors', doctorsRouter);
 /* router.use('/settings/categories', categoriesRouter);
 router.use('/settings/suppliers', suppliersRouter); */
 

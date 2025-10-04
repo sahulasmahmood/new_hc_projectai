@@ -161,6 +161,21 @@ const ConsultationStartDialog = ({
     }
   };
 
+  const getBadgeText = (messageType: string) => {
+    switch (messageType) {
+      case "error":
+        return "CRITICAL";
+      case "warning":
+        return "NOTICE";
+      case "info":
+        return "INFO";
+      case "success":
+        return "ON TIME";
+      default:
+        return messageType.toUpperCase();
+    }
+  };
+
   return (
     <AlertDialog open={isOpen} onOpenChange={onClose}>
       <AlertDialogContent className="max-w-md">
@@ -201,7 +216,7 @@ const ConsultationStartDialog = ({
                   className={getBadgeColor(validation.messageType)}
                   variant="outline"
                 >
-                  {validation.messageType.toUpperCase()}
+                  {getBadgeText(validation.messageType)}
                 </Badge>
                 <AlertDialogDescription className="mt-2 text-sm">
                   {validation.message}

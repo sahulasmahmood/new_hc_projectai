@@ -136,6 +136,32 @@ const deleteRolePermission = async (req, res) => {
       });
     }
 
+    // First, get the role to check its name
+    const role = await prisma.rolePermission.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!role) {
+      return res.status(404).json({
+        success: false,
+        error: 'Role not found'
+      });
+    }
+
+    // Check if any staff members are using this role
+    const staffUsingRole = await prisma.staff.findMany({
+      where: { role: role.role },
+      select: { id: true, name: true, employeeId: true }
+    });
+
+    if (staffUsingRole.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete role "${role.role}" because it is assigned to ${staffUsingRole.length} staff member(s). Please reassign or remove these staff members first.`,
+        staffMembers: staffUsingRole
+      });
+    }
+
     await prisma.rolePermission.delete({
       where: { id: parseInt(id) }
     });

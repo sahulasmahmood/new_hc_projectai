@@ -12,6 +12,7 @@ import NursePanel from "@/components/exam/NursePanel";
 import PrescriptionForm from "@/components/prescription/PrescriptionForm";
 import PrescriptionViewModal from "@/components/prescription/PrescriptionViewModal";
 import VitalsViewModal from "@/components/prescription/VitalsViewModal";
+import ConsultationTimeDisplay from "@/components/consultation/ConsultationTimeDisplay";
 import api from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -191,11 +192,16 @@ const PatientExam = () => {
             <p className="text-gray-600">Consultation and prescription management</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-gray-400" />
-          <span className="text-sm text-gray-600">
-            {new Date().toLocaleString()}
-          </span>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-gray-400" />
+            <span className="text-sm text-gray-600">
+              {new Date().toLocaleString()}
+            </span>
+          </div>
+          {selectedPatient.consultationStatus === 'active' && appointmentId && (
+            <ConsultationTimeDisplay appointmentId={appointmentId} />
+          )}
         </div>
       </div>
 

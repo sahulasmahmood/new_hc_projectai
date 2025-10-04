@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { Trash2, Users, PenSquare, Plus, Building, Clock, X } from "lucide-react";
+import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal";
+import { Trash2, Users, PenSquare, Plus, Building, X } from "lucide-react";
 import api from "@/lib/api";
 
 interface Department {
@@ -30,6 +31,15 @@ const StaffSettingsManagement = () => {
   });
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{
+    type: 'department' | 'shift' | null;
+    id: number | null;
+    name: string;
+  }>({
+    type: null,
+    id: null,
+    name: ""
+  });
 
   const fetchDepartments = useCallback(async () => {
     try {
@@ -69,7 +79,7 @@ const StaffSettingsManagement = () => {
   // Department handlers
   const handleSaveDepartment = async () => {
     if (!newDepartment.trim()) return;
-    
+
     try {
       const method = editingDepartment ? "PUT" : "POST";
       const body = editingDepartment
@@ -105,25 +115,39 @@ const StaffSettingsManagement = () => {
     setNewDepartment("");
   };
 
-  const handleDeleteDepartment = async (id: number) => {
-    try {
-      const response = await api.delete('/settings/staff-settings/departments', {
-        data: { id }
-      });
-      if (response.data.success) {
-        fetchDepartments();
-        toast({
-          title: "Success",
-          description: "Department deleted successfully"
-        });
-      }
-    } catch (error) {
+  const handleDeleteClick = (type: 'department' | 'shift', id: number, name: string) => {
+    setDeleteModal({
+      type,
+      id,
+      name
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.id || !deleteModal.type) return;
+
+    const endpoint = deleteModal.type === 'department'
+      ? '/settings/staff-settings/departments'
+      : '/settings/staff-settings/shifts';
+
+    const response = await api.delete(endpoint, {
+      data: { id: deleteModal.id }
+    });
+
+    if (response.data.success) {
       toast({
-        title: "Error",
-        description: "Failed to delete department",
-        variant: "destructive"
+        title: "Success",
+        description: `${deleteModal.type === 'department' ? 'Department' : 'Shift'} deleted successfully`
       });
+
+      if (deleteModal.type === 'department') {
+        fetchDepartments();
+      } else {
+        fetchShifts();
+      }
     }
+
+    setDeleteModal({ type: null, id: null, name: "" });
   };
 
   // Helper function to convert 24h time to 12h format with AM/PM
@@ -149,7 +173,7 @@ const StaffSettingsManagement = () => {
 
   const handleSaveShift = async () => {
     if (!newShift.name.trim() || !newShift.startTime || !newShift.endTime) return;
-    
+
     try {
       const method = editingShift ? "PUT" : "POST";
       const body = editingShift
@@ -175,26 +199,7 @@ const StaffSettingsManagement = () => {
     }
   };
 
-  const handleDeleteShift = async (id: number) => {
-    try {
-      const response = await api.delete('/settings/staff-settings/shifts', {
-        data: { id }
-      });
-      if (response.data.success) {
-        fetchShifts();
-        toast({
-          title: "Success",
-          description: "Shift deleted successfully"
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete shift",
-        variant: "destructive"
-      });
-    }
-  };
+  // Remove the old handleDeleteShift function - it's now handled by handleDeleteConfirm
 
   const handleEditShift = (shift: Shift) => {
     setEditingShift(shift);
@@ -231,7 +236,7 @@ const StaffSettingsManagement = () => {
               {departments.length} Total
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg p-4 mb-6 shadow-sm border">
             <div className="flex gap-3">
               <Input
@@ -260,7 +265,7 @@ const StaffSettingsManagement = () => {
               )}
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg overflow-hidden shadow-sm border">
             {departments.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
@@ -284,9 +289,8 @@ const StaffSettingsManagement = () => {
                   {departments.map((department, index) => (
                     <tr
                       key={department.id}
-                      className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${
-                        editingDepartment?.id === department.id ? 'bg-medical-50' : ''
-                      }`}
+                      className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${editingDepartment?.id === department.id ? 'bg-medical-50' : ''
+                        }`}
                     >
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
@@ -306,14 +310,22 @@ const StaffSettingsManagement = () => {
                           >
                             <PenSquare className="w-4 h-4" />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
-                            onClick={() => handleDeleteDepartment(department.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <DeleteConfirmModal
+                            title="Delete Department"
+                            itemName={department.name}
+                            description="This action cannot be undone. This will permanently delete the department."
+                            onConfirm={() => handleDeleteConfirm()}
+                            trigger={
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                                onClick={() => handleDeleteClick('department', department.id, department.name)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            }
+                          />
                         </div>
                       </td>
                     </tr>
@@ -437,14 +449,22 @@ const StaffSettingsManagement = () => {
                       >
                         <PenSquare className="w-4 h-4" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
-                        onClick={() => handleDeleteShift(shift.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <DeleteConfirmModal
+                        title="Delete Shift"
+                        itemName={shift.name}
+                        description="This action cannot be undone. This will permanently delete the shift."
+                        onConfirm={() => handleDeleteConfirm()}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
+                            onClick={() => handleDeleteClick('shift', shift.id, shift.name)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        }
+                      />
                     </td>
                   </tr>
                 ))}

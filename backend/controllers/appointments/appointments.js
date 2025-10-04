@@ -16,16 +16,36 @@ const {
 // Get all appointments
 const getAllAppointments = async (req, res) => {
   try {
-    // console.log('Fetching all appointments...');
+    const { date, doctorId } = req.query;
+    const where = {};
+    
+    // Filter by date if provided
+    if (date) {
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      
+      where.date = {
+        gte: startDate,
+        lte: endDate
+      };
+    }
+    
+    // Filter by doctor if provided
+    if (doctorId) {
+      where.doctorId = parseInt(doctorId);
+    }
+    
     const appointments = await prisma.appointment.findMany({
+      where,
       orderBy: {
         date: 'asc'
       }
     });
-    // console.log('Found appointments:', appointments);
     res.json(appointments);
   } catch (error) {
-    // console.error('Error fetching appointments:', error);
+    console.error('Error fetching appointments:', error);
     res.status(500).json({ error: 'Failed to fetch appointments' });
   }
 };
@@ -53,14 +73,16 @@ const getAppointment = async (req, res) => {
 const createAppointment = async (req, res) => {
   try {
     const {
-      patientId, // <-- new
+      patientId,
       patientPhone,
       date,
       time,
       type,
       duration,
       notes = '',
-      status = 'Confirmed'
+      status = 'Confirmed',
+      doctorId,
+      doctorName
     } = req.body;
 
     let patient = null;
@@ -136,7 +158,9 @@ const createAppointment = async (req, res) => {
           duration,
           notes: notes || null,
           status,
-          patientId: patient.id
+          patientId: patient.id,
+          doctorId: doctorId ? parseInt(doctorId) : null,
+          doctorName: doctorName || null
         }
       });
 

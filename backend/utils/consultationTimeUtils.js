@@ -58,7 +58,7 @@ const validateConsultationStart = (date, time, duration, currentTime = new Date(
   if (currentTime > scheduledEnd) {
     return {
       canStart: false,
-      message: `Cannot start consultation. The scheduled time slot (${scheduledStartStr} - ${scheduledEndStr}) has already ended. Current time: ${currentTimeStr}`,
+      message: `The scheduled time slot (${scheduledStartStr} - ${scheduledEndStr}) has already ended. Current time: ${currentTimeStr}`,
       messageType: 'error',
       scheduledTimes: { scheduledStart, scheduledEnd },
       actualTime: currentTime
@@ -68,6 +68,30 @@ const validateConsultationStart = (date, time, duration, currentTime = new Date(
   // Check if starting early (before scheduled start time)
   if (currentTime < scheduledStart) {
     const minutesEarly = Math.ceil((scheduledStart - currentTime) / 60000);
+    
+    // Extremely early (more than 15 minutes)
+    if (minutesEarly > 15) {
+      return {
+        canStart: false,
+        message: `You're starting ${minutesEarly} minutes early. Please wait until closer to the scheduled time: ${scheduledStartStr}`,
+        messageType: 'error',
+        scheduledTimes: { scheduledStart, scheduledEnd },
+        actualTime: currentTime
+      };
+    }
+    
+    // Moderately early (5-15 minutes)
+    if (minutesEarly > 5) {
+      return {
+        canStart: true,
+        message: `You're starting ${minutesEarly} minute(s) early. The consultation will still be recorded as the official time slot: ${scheduledStartStr} - ${scheduledEndStr}`,
+        messageType: 'warning',
+        scheduledTimes: { scheduledStart, scheduledEnd },
+        actualTime: currentTime
+      };
+    }
+    
+    // Slightly early (1-5 minutes)
     return {
       canStart: true,
       message: `You're starting ${minutesEarly} minute(s) early. The consultation will still be recorded as the official time slot: ${scheduledStartStr} - ${scheduledEndStr}`,
@@ -80,10 +104,35 @@ const validateConsultationStart = (date, time, duration, currentTime = new Date(
   // Check if starting late (after scheduled start but before end)
   if (currentTime > scheduledStart) {
     const minutesLate = Math.ceil((currentTime - scheduledStart) / 60000);
+    
+    // Extremely late (more than half the appointment duration)
+    const halfDuration = Math.ceil(parseInt(duration) / 2);
+    if (minutesLate > halfDuration) {
+      return {
+        canStart: true,
+        message: `You're starting ${minutesLate} minute(s) late (more than half the appointment duration). Consider rescheduling if possible. The consultation will be recorded as: ${scheduledStartStr} - ${scheduledEndStr}`,
+        messageType: 'error',
+        scheduledTimes: { scheduledStart, scheduledEnd },
+        actualTime: currentTime
+      };
+    }
+    
+    // Moderately late (5+ minutes)
+    if (minutesLate >= 5) {
+      return {
+        canStart: true,
+        message: `You're starting ${minutesLate} minute(s) late. The consultation will still be recorded as the official time slot: ${scheduledStartStr} - ${scheduledEndStr}`,
+        messageType: 'warning',
+        scheduledTimes: { scheduledStart, scheduledEnd },
+        actualTime: currentTime
+      };
+    }
+    
+    // Slightly late (1-4 minutes)
     return {
       canStart: true,
       message: `You're starting ${minutesLate} minute(s) late. The consultation will still be recorded as the official time slot: ${scheduledStartStr} - ${scheduledEndStr}`,
-      messageType: 'warning',
+      messageType: 'info',
       scheduledTimes: { scheduledStart, scheduledEnd },
       actualTime: currentTime
     };

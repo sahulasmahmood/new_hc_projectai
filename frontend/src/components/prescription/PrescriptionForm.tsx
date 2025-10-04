@@ -119,9 +119,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
     address?: string;
   } | null>(null);
   const [loadingHospitalInfo, setLoadingHospitalInfo] = useState(true);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
-  const [loadingDoctors, setLoadingDoctors] = useState(true);
+
   const [editingMedication, setEditingMedication] = useState<EditingMedication | null>(null);
   const [newMedication, setNewMedication] = useState({
     name: "",
@@ -130,7 +128,12 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
     duration: ""
   });
 
-  // Fetch hospital information and doctors
+  const [appointmentData, setAppointmentData] = useState<{
+    doctorId?: number;
+    doctorName?: string;
+  } | null>(null);
+
+  // Fetch hospital information and appointment data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -148,20 +151,22 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
         setLoadingHospitalInfo(false);
       }
 
-      try {
-        // Fetch doctors
-        const doctorsResponse = await api.get('/prescriptions/doctors');
-        setDoctors(doctorsResponse.data);
-        // Don't auto-select - force user to choose for security
-      } catch (error) {
-        console.error('Error fetching doctors:', error);
-      } finally {
-        setLoadingDoctors(false);
+      // Fetch appointment data if appointmentId is provided
+      if (appointmentId) {
+        try {
+          const appointmentResponse = await api.get(`/appointments/${appointmentId}`);
+          setAppointmentData({
+            doctorId: appointmentResponse.data.doctorId,
+            doctorName: appointmentResponse.data.doctorName
+          });
+        } catch (error) {
+          console.error('Error fetching appointment data:', error);
+        }
       }
     };
 
     fetchData();
-  }, []);
+  }, [appointmentId]);
 
   const addMedication = () => {
     if (!newMedication.name.trim()) {
@@ -224,15 +229,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
   };
 
   const handleSave = async () => {
-    // Validate doctor selection - MANDATORY for security
-    if (!selectedDoctorId) {
-      toast({
-        title: "Doctor Selection Required",
-        description: "Please select an attending doctor before saving the prescription. This is required for security and legal compliance.",
-        variant: "destructive"
-      });
-      return;
-    }
+
 
     // Check if there's unsaved medicine data
     const hasUnsavedMedicine = newMedication.name.trim() || 
@@ -252,16 +249,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
 
     setSaving(true);
     try {
-      const selectedDoctor = doctors.find(d => d.id.toString() === selectedDoctorId);
-      
-      if (!selectedDoctor) {
-        toast({
-          title: "Invalid Doctor Selection",
-          description: "Please select a valid doctor from the list.",
-          variant: "destructive"
-        });
-        return;
-      }
+
       
       const prescriptionData = {
         patientId: parseInt(patientId),
@@ -271,8 +259,8 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
         investigations,
         doctorNotes,
         advice,
-        doctorId: parseInt(selectedDoctorId),
-        doctorName: selectedDoctor.name
+        doctorName: appointmentData?.doctorName || "System Generated", // Use doctor from appointment
+        doctorId: appointmentData?.doctorId
       };
 
       const response = await api.post('/prescriptions', prescriptionData);
@@ -294,7 +282,6 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
       setDoctorNotes("");
       setAdvice("");
       clearSavedState();
-      setSelectedDoctorId("");
       localStorage.removeItem('prescription_unsaved');
     } catch (error) {
       console.error('Error saving prescription:', error);
@@ -362,46 +349,15 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                 </Badge>
               )}
             </div>
+            {appointmentData?.doctorName && (
+              <div className="mt-2 text-xs text-gray-600">
+                <span className="font-medium">Doctor:</span> {appointmentData.doctorName}
+              </div>
+            )}
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-600">Date: {new Date().toLocaleDateString()}</p>
           </div>
-        </div>
-
-        {/* Doctor Selection - MANDATORY */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Attending Doctor: <span className="text-red-500">*</span>
-            <span className="text-xs text-gray-500 block mt-1">Required for prescription security and legal compliance</span>
-          </label>
-          {loadingDoctors ? (
-            <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
-          ) : doctors.length === 0 ? (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              No doctors available. Please add doctors to staff before creating prescriptions.
-            </div>
-          ) : (
-            <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
-              <SelectTrigger className={`w-full ${!selectedDoctorId ? 'border-red-300' : ''}`}>
-                <SelectValue placeholder="⚠️ Select attending doctor (Required)" />
-              </SelectTrigger>
-              <SelectContent>
-                {doctors.map((doctor) => (
-                  <SelectItem key={doctor.id} value={doctor.id.toString()}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{doctor.name}</span>
-                      {doctor.qualification && (
-                        <span className="text-xs text-gray-500">{doctor.qualification}</span>
-                      )}
-                      {doctor.digitalSignature && (
-                        <span className="text-xs text-green-600">✓ Digital signature available</span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
         </div>
 
         {/* Form Sections */}
@@ -442,7 +398,6 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                     });
                   }}
                   placeholder="Type item name (medicines, syringes, devices, etc.)..."
-                  doctorId={selectedDoctorId}
                 />
               </div>
               
@@ -648,56 +603,15 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
           </div>
         </div>
 
-        {/* Signature Section */}
-        {selectedDoctorId && (
-          <div className="flex justify-between items-end mt-6 pt-4 border-t border-gray-300">
-            <div>
-              <div className="text-sm text-gray-600 mb-1">Doctor Signature:</div>
-              {(() => {
-                const selectedDoctor = doctors.find(d => d.id.toString() === selectedDoctorId);
-                if (selectedDoctor?.digitalSignature && selectedDoctor.digitalSignature.startsWith('data:image')) {
-                  return (
-                    <div className="space-y-2">
-                      <img 
-                        src={selectedDoctor.digitalSignature} 
-                        alt="Doctor Signature" 
-                        className="h-12 max-w-[200px] object-contain border border-gray-200 bg-white rounded"
-                      />
-                      <div className="text-xs text-green-600">✓ Digital signature</div>
-                    </div>
-                  );
-                } else if (selectedDoctor) {
-                  return (
-                    <div className="italic text-base font-medium">
-                      {selectedDoctor.qualification 
-                        ? `${selectedDoctor.name}, ${selectedDoctor.qualification}`
-                        : selectedDoctor.name}
-                    </div>
-                  );
-                }
-                return (
-                  <span className="text-red-500 text-sm not-italic">
-                    ⚠️ Please select a doctor above
-                  </span>
-                );
-              })()}
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-gray-600 mb-1">Date:</div>
-              <div className="font-medium">{new Date().toLocaleDateString()}</div>
-            </div>
-          </div>
-        )}
-
         {/* Save Button */}
         <div className="flex justify-center mt-6">
           <Button 
             onClick={handleSave}
-            className={`px-8 py-2 ${selectedDoctorId ? 'bg-medical-500 hover:bg-medical-600' : 'bg-gray-400 cursor-not-allowed'}`}
+            className="px-8 py-2 bg-medical-500 hover:bg-medical-600"
             size="lg"
-            disabled={!selectedDoctorId || doctors.length === 0 || saving}
+            disabled={saving}
           >
-            {!selectedDoctorId ? '⚠️ Select Doctor First' : saving ? 'Saving...' : 'Save Prescription'}
+            {saving ? 'Saving...' : 'Save Prescription'}
           </Button>
         </div>
       </CardContent>

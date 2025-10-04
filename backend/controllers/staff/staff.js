@@ -1,4 +1,5 @@
 const { PrismaClient } = require('../../generated/prisma');
+const { ensureRoleExists } = require('../../utils/initializeDefaultRoles');
 const prisma = new PrismaClient();
 
 // GET all staff members with optional search and filter
@@ -158,12 +159,10 @@ const createStaff = async (req, res) => {
       }
     }
 
-    // Validate role exists in RolePermission
-    const roleExists = await prisma.rolePermission.findUnique({
-      where: { role: role }
-    });
-
-    if (!roleExists) {
+    // Ensure role exists in RolePermission (create if it's a default role)
+    try {
+      await ensureRoleExists(role);
+    } catch (error) {
       return res.status(400).json({
         error: 'Invalid role selected'
       });
@@ -303,13 +302,11 @@ const updateStaff = async (req, res) => {
       }
     }
 
-    // Validate role if provided
+    // Ensure role exists if provided (create if it's a default role)
     if (role) {
-      const roleExists = await prisma.rolePermission.findUnique({
-        where: { role: role }
-      });
-
-      if (!roleExists) {
+      try {
+        await ensureRoleExists(role);
+      } catch (error) {
         return res.status(400).json({
           error: 'Invalid role selected'
         });

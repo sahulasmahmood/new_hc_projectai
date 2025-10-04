@@ -487,6 +487,33 @@ const getPatientByPhone = async (req, res) => {
   res.json(patients);
 };
 
+// Get patient by visible ID
+const getPatientByVisibleId = async (req, res) => {
+  try {
+    const { id } = req.query;
+    if (!id) {
+      return res.status(400).json({ error: "Patient ID required" });
+    }
+
+    const patients = await prisma.patient.findMany({
+      where: {
+        visibleId: {
+          contains: id,
+          mode: 'insensitive'
+        }
+      },
+      orderBy: {
+        visibleId: 'asc'
+      }
+    });
+
+    res.json(patients);
+  } catch (error) {
+    console.error('Error searching patients by ID:', error);
+    res.status(500).json({ error: 'Failed to search patients by ID' });
+  }
+};
+
 module.exports = {
   getAllPatients,
   getPatientById,
@@ -495,5 +522,6 @@ module.exports = {
   deletePatient,
   updateABHAStatus,
   getPatientByPhone,
+  getPatientByVisibleId,
   getActiveConsultations
 };
