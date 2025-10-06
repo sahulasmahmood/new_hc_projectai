@@ -236,7 +236,6 @@ model Staff {
   departmentId       Int?
   department         Department? @relation(fields: [departmentId], references: [id])
   shiftTime          Shift?      @relation(fields: [shiftId], references: [id])
-  rolePermission     RolePermission? @relation(fields: [role], references: [role])
 
   @@index([departmentId])
   @@index([shiftId])
@@ -267,7 +266,6 @@ model RolePermission {
   permissions Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  staff       Staff[] // Relation to staff members using this role
 }
 
 model PatientVitals {

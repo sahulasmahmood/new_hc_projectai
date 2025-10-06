@@ -680,6 +680,33 @@ const startConsultation = async (req, res) => {
         });
       }
     }
+
+    // Check if doctor already has an active consultation (Healthcare Best Practice)
+    if (appointment.doctorId) {
+      const doctorActiveConsultation = await prisma.appointment.findFirst({
+        where: {
+          doctorId: appointment.doctorId,
+          status: 'Consultation Started',
+          id: { not: parseInt(id) } // Exclude current appointment
+        },
+        include: {
+          patient: {
+            select: {
+              name: true,
+              visibleId: true
+            }
+          }
+        }
+      });
+
+      if (doctorActiveConsultation) {
+        return res.status(400).json({ 
+          error: `Dr. ${appointment.doctorName || 'This doctor'} already has an active consultation with ${doctorActiveConsultation.patient?.name || 'another patient'} (${doctorActiveConsultation.patient?.visibleId || 'ID: ' + doctorActiveConsultation.patientId}). Please complete or abort that consultation before starting a new one.`,
+          activeAppointmentId: doctorActiveConsultation.id,
+          doctorId: appointment.doctorId
+        });
+      }
+    }
     
     // Get appointment date in YYYY-MM-DD format
     const appointmentDate = appointment.date.toISOString().split('T')[0];

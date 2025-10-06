@@ -87,7 +87,11 @@ const Appointments = () => {
   const [vitalsDialogOpen, setVitalsDialogOpen] = useState(false);
   const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState<Appointment | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(() => {
+    // Load selected doctor from localStorage
+    const saved = localStorage.getItem('selectedDoctorId');
+    return saved ? null : null; // Will be set after doctors are loaded
+  });
   const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   // Use appointment settings hook
@@ -167,7 +171,15 @@ const Appointments = () => {
       setLoadingDoctors(true);
       const response = await api.get('/doctors');
       setDoctors(response.data);
-      // Don't auto-select any doctor - let user choose
+      
+      // Restore selected doctor from localStorage
+      const savedDoctorId = localStorage.getItem('selectedDoctorId');
+      if (savedDoctorId) {
+        const doctor = response.data.find((d: Doctor) => d.id.toString() === savedDoctorId);
+        if (doctor) {
+          setSelectedDoctor(doctor);
+        }
+      }
     } catch (error: unknown) {
       toast({
         title: "Error",
@@ -547,6 +559,12 @@ const Appointments = () => {
                 onValueChange={(value) => {
                   const doctor = doctors.find(d => d.id.toString() === value);
                   setSelectedDoctor(doctor || null);
+                  // Save to localStorage
+                  if (doctor) {
+                    localStorage.setItem('selectedDoctorId', doctor.id.toString());
+                  } else {
+                    localStorage.removeItem('selectedDoctorId');
+                  }
                 }}
                 disabled={loadingDoctors}
               >
@@ -639,6 +657,15 @@ const Appointments = () => {
                           <span>{appointment.duration} min</span>
                           <span>•</span>
                           <span className="font-medium">{appointment.type}</span>
+                          {appointment.doctorName && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <UserCheck className="h-4 w-4" />
+                                Dr. {appointment.doctorName}
+                              </span>
+                            </>
+                          )}
                         </div>
                         {appointment.status === 'Consultation Started' && appointment.actualStartTime && (
                           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">

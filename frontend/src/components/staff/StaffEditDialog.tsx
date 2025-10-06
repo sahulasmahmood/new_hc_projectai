@@ -386,21 +386,11 @@ const StaffEditDialog = ({
                       <SelectValue placeholder="Select department" />
                     </SelectTrigger>
                     <SelectContent>
-                      {/* Default options for nurses and general staff */}
-                      <SelectItem value="0">General</SelectItem>
-                      <SelectItem value="-1">Nursing</SelectItem>
-                      <SelectItem value="-2">Administration</SelectItem>
-                      <SelectItem value="-3">Support Staff</SelectItem>
-                      {settings.departments.length > 0 && (
-                        <>
-                          <div className="px-2 py-1 text-xs text-gray-500 border-t">Specialized Departments</div>
-                          {settings.departments.map((dept) => (
-                            <SelectItem key={dept.id} value={dept.id.toString()}>
-                              {dept.name}
-                            </SelectItem>
-                          ))}
-                        </>
-                      )}
+                      {settings.departments.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id.toString()}>
+                          {dept.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -510,25 +500,43 @@ const StaffEditDialog = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="weekOff">Week Off</Label>
-                  <Select
-                    value={formData.weekOff || undefined}
-                    onValueChange={(value) => handleChange("weekOff", value === "none" ? "" : value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select week off day" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sunday">Sunday</SelectItem>
-                      <SelectItem value="monday">Monday</SelectItem>
-                      <SelectItem value="tuesday">Tuesday</SelectItem>
-                      <SelectItem value="wednesday">Wednesday</SelectItem>
-                      <SelectItem value="thursday">Thursday</SelectItem>
-                      <SelectItem value="friday">Friday</SelectItem>
-                      <SelectItem value="saturday">Saturday</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="weekOff">Week Off Days</Label>
+                  <div className="border rounded-md p-3 space-y-2">
+                    {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+                      const dayLower = day.toLowerCase();
+                      const currentWeekOff = formData.weekOff || '';
+                      const weekOffDays = currentWeekOff.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+                      const isChecked = weekOffDays.includes(dayLower);
+                      
+                      return (
+                        <div key={day} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id={`weekOff-${day}`}
+                            checked={isChecked}
+                            onChange={(e) => {
+                              let newWeekOffDays = [...weekOffDays];
+                              if (e.target.checked) {
+                                newWeekOffDays.push(dayLower);
+                              } else {
+                                newWeekOffDays = newWeekOffDays.filter(d => d !== dayLower);
+                              }
+                              handleChange("weekOff", newWeekOffDays.join(', '));
+                            }}
+                            className="h-4 w-4 rounded border-gray-300 text-medical-600 focus:ring-medical-500"
+                          />
+                          <label htmlFor={`weekOff-${day}`} className="text-sm text-gray-700 cursor-pointer">
+                            {day}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {formData.weekOff && (
+                    <p className="text-xs text-gray-500">
+                      Selected: {formData.weekOff}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -600,20 +608,23 @@ const StaffEditDialog = ({
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="consultationFee">Consultation Fee (₹)</Label>
-                  <Input
-                    id="consultationFee"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.consultationFee}
-                    onChange={(e) =>
-                      handleChange("consultationFee", e.target.value)
-                    }
-                    placeholder="Enter consultation fee in rupees"
-                  />
-                </div>
+                {/* Only show consultation fee for Doctor role */}
+                {formData.role === 'Doctor' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="consultationFee">Consultation Fee (₹)</Label>
+                    <Input
+                      id="consultationFee"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.consultationFee}
+                      onChange={(e) =>
+                        handleChange("consultationFee", e.target.value)
+                      }
+                      placeholder="Enter consultation fee in rupees"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Digital Signature Section - Only for Doctors */}
@@ -626,18 +637,96 @@ const StaffEditDialog = ({
                   </h4>
                   <div className="space-y-4">
                     <p className="text-xs text-gray-600">
-                      Draw your signature below. This will appear on all prescriptions you create.
-                      For security and legal compliance, ensure your signature is clear and professional.
+                      You can either draw your signature or upload a photo of your signature.
+                      This will appear on all prescriptions you create.
                     </p>
                     
-                    <div className="flex justify-center">
-                      <SignaturePad
-                        value={formData.digitalSignature}
-                        onChange={(signature) => handleChange("digitalSignature", signature)}
-                        width={350}
-                        height={150}
-                      />
+                    {/* Signature Method Tabs */}
+                    <div className="flex gap-2 mb-4">
+                      <Button
+                        type="button"
+                        variant={!formData.digitalSignature?.startsWith('data:image/') || formData.digitalSignature?.startsWith('data:image/png;base64,iVBORw0KGgo') ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          // Switch to draw mode - clear if it's an uploaded image
+                          if (formData.digitalSignature?.startsWith('data:image/jpeg') || 
+                              formData.digitalSignature?.startsWith('data:image/jpg')) {
+                            handleChange("digitalSignature", "");
+                          }
+                        }}
+                      >
+                        Draw Signature
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={formData.digitalSignature?.startsWith('data:image/jpeg') || formData.digitalSignature?.startsWith('data:image/jpg') ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          document.getElementById('signature-upload')?.click();
+                        }}
+                      >
+                        Upload Photo
+                      </Button>
                     </div>
+
+                    {/* Hidden file input */}
+                    <input
+                      id="signature-upload"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // Validate file size (max 2MB)
+                          if (file.size > 2 * 1024 * 1024) {
+                            toast({
+                              title: "File Too Large",
+                              description: "Please upload an image smaller than 2MB",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            handleChange("digitalSignature", reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                    
+                    {/* Show signature pad or uploaded image */}
+                    {(!formData.digitalSignature?.startsWith('data:image/jpeg') && 
+                      !formData.digitalSignature?.startsWith('data:image/jpg')) ? (
+                      <div className="flex justify-center">
+                        <SignaturePad
+                          value={formData.digitalSignature}
+                          onChange={(signature) => handleChange("digitalSignature", signature)}
+                          width={350}
+                          height={150}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="border rounded p-2 bg-white">
+                          <img 
+                            src={formData.digitalSignature} 
+                            alt="Signature" 
+                            className="max-w-[350px] max-h-[150px] object-contain"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleChange("digitalSignature", "")}
+                        >
+                          Remove & Re-upload
+                        </Button>
+                      </div>
+                    )}
                     
                     {formData.digitalSignature && (
                       <div className="text-center">
