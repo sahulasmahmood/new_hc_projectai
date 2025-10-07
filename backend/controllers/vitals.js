@@ -15,8 +15,15 @@ const prepareVitalsData = (data) => {
     weight,
     height,
     recordedBy,
+    recordedByName,
     notes
   } = data;
+
+  // Create recorded by string with name if provided
+  let recordedByString = recordedBy || 'Doctor';
+  if (recordedByName && recordedByName.trim()) {
+    recordedByString = `${recordedByName.trim()} (${recordedBy || 'Staff'})`;
+  }
 
   return {
     patientId: patientId ? parseInt(patientId) : undefined,
@@ -29,7 +36,7 @@ const prepareVitalsData = (data) => {
     oxygenSaturation: oxygenSaturation ? parseInt(oxygenSaturation) : null,
     weight: weight ? parseFloat(weight) : null,
     height: height ? parseFloat(height) : null,
-    recordedBy: recordedBy || 'Doctor',
+    recordedBy: recordedByString,
     notes: notes || null
   };
 };
@@ -49,6 +56,7 @@ const createVitals = async (req, res) => {
       weight,
       height,
       recordedBy,
+      recordedByName,
       notes
     } = req.body;
 
@@ -160,7 +168,8 @@ const getPatientVitals = async (req, res) => {
           select: {
             date: true,
             time: true,
-            type: true
+            type: true,
+            doctorName: true
           }
         }
       },
@@ -264,6 +273,7 @@ const updateVitals = async (req, res) => {
       weight,
       height,
       recordedBy,
+      recordedByName,
       notes
     } = req.body;
 

@@ -56,6 +56,7 @@ interface Patient {
   id: string | number;
   name: string;
   phone: string;
+  phoneRelationship?: string;
   visibleId?: string;
   age?: number;
   gender?: string;
@@ -194,37 +195,61 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
 
     if (phoneOrId.length >= 3) {
       try {
-        let res = { data: [] };
+        let foundPatients: Patient[] = [];
         
-        // Try searching by patient ID first (visibleId)
-        try {
-          const idSearchRes = await api.get(`/patients/search/by-id?id=${phoneOrId}`);
-          if (idSearchRes.data && idSearchRes.data.length > 0) {
-            res = { data: idSearchRes.data };
-          }
-        } catch (idError) {
-          // If ID search fails, try phone search
+        // Determine if input looks like a phone number (contains only digits) or an ID
+        const isPhoneNumber = /^\d+$/.test(phoneOrId);
+        
+        if (isPhoneNumber) {
+          // Try phone search first for numeric input
           try {
             const phoneSearchRes = await api.get(`/patients/search/by-phone?phone=${phoneOrId}`);
             if (phoneSearchRes.data && phoneSearchRes.data.length > 0) {
-              res = { data: phoneSearchRes.data };
+              foundPatients = phoneSearchRes.data;
             }
           } catch (phoneError) {
-            // Both failed, patient not found
-            res = { data: [] };
+            // Phone search failed, try ID search as fallback
+            try {
+              const idSearchRes = await api.get(`/patients/search/by-id?id=${phoneOrId}`);
+              if (idSearchRes.data && idSearchRes.data.length > 0) {
+                foundPatients = idSearchRes.data;
+              }
+            } catch (idError) {
+              // Both failed
+              foundPatients = [];
+            }
+          }
+        } else {
+          // Try ID search first for alphanumeric input
+          try {
+            const idSearchRes = await api.get(`/patients/search/by-id?id=${phoneOrId}`);
+            if (idSearchRes.data && idSearchRes.data.length > 0) {
+              foundPatients = idSearchRes.data;
+            }
+          } catch (idError) {
+            // ID search failed, try phone search as fallback
+            try {
+              const phoneSearchRes = await api.get(`/patients/search/by-phone?phone=${phoneOrId}`);
+              if (phoneSearchRes.data && phoneSearchRes.data.length > 0) {
+                foundPatients = phoneSearchRes.data;
+              }
+            } catch (phoneError) {
+              // Both failed
+              foundPatients = [];
+            }
           }
         }
         
-        if (Array.isArray(res.data) && res.data.length > 1) {
-          setMatchingPatients(res.data);
+        if (foundPatients.length > 1) {
+          setMatchingPatients(foundPatients);
           setPatientFound(true);
           setShowCreatePatient(false);
           setFormData(prev => ({ ...prev, patientName: "" }));
-        } else if (Array.isArray(res.data) && res.data.length === 1) {
+        } else if (foundPatients.length === 1) {
           setMatchingPatients([]);
-          setFormData(prev => ({ ...prev, patientName: res.data[0].name, patientPhone: res.data[0].phone }));
-          setSelectedPatientId(String(res.data[0].id));
-          setSelectedPatientVisibleId(res.data[0].visibleId || "");
+          setFormData(prev => ({ ...prev, patientName: foundPatients[0].name, patientPhone: foundPatients[0].phone }));
+          setSelectedPatientId(String(foundPatients[0].id));
+          setSelectedPatientVisibleId(foundPatients[0].visibleId || "");
           setPatientFound(true);
           setShowCreatePatient(false);
         } else {
@@ -405,7 +430,13 @@ const AppointmentDialog = ({ appointment, mode, onSave, onClose, selectedDate, s
                 <SelectContent>
                   {matchingPatients.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name} {p.visibleId ? `(${p.visibleId})` : ""} {p.age ? `- ${p.age}y` : ""} {p.gender ? `/ ${p.gender}` : ""}
+                      <div className="flex flex-col">
+                        <span>{p.name} {p.visibleId ? `(${p.visibleId})` : ""}</span>
+                        <span className="text-xs text-gray-500">
+                          {p.age ? `${p.age}y` : ""} {p.gender ? `/ ${p.gender}` : ""}
+                          {p.phoneRelationship && <span className="ml-2 text-blue-600">• {p.phoneRelationship}</span>}
+                        </span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>

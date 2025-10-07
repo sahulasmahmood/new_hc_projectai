@@ -25,10 +25,11 @@ const FilterDialog = ({ onApplyFilters, currentFilters, typeOptions }: FilterDia
   });
 
   const timeRangeOptions = [
-    { value: "all", label: "All Day" },
-    { value: "morning", label: "Morning (8AM - 12PM)" },
+    { value: "all", label: "All Day (24 Hours)" },
+    { value: "morning", label: "Morning (6AM - 12PM)" },
     { value: "afternoon", label: "Afternoon (12PM - 5PM)" },
-    { value: "evening", label: "Evening (5PM - 8PM)" }
+    { value: "evening", label: "Evening (5PM - 9PM)" },
+    { value: "night", label: "Night (9PM - 6AM)" }
   ];
 
   const handleTypeChange = (type: string, checked: boolean) => {

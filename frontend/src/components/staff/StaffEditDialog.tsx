@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import SignaturePad from "@/components/ui/signature-pad";
+import { Upload } from "lucide-react";
 import api from "@/lib/api";
 
 interface StaffEditDialogProps {
@@ -667,6 +668,21 @@ const StaffEditDialog = ({
                       >
                         Upload Photo
                       </Button>
+                    </div>
+
+                    {/* File size information */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                      <div className="flex items-start gap-2">
+                        <Upload className="h-4 w-4 text-blue-600 mt-0.5" />
+                        <div className="text-xs text-blue-800">
+                          <p className="font-medium mb-1">Upload Requirements:</p>
+                          <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                            <li>Maximum file size: <span className="font-semibold">2 MB</span></li>
+                            <li>Supported formats: JPG, JPEG, PNG</li>
+                            <li>Recommended: Clear signature on white background</li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Hidden file input */}

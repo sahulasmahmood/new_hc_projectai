@@ -429,16 +429,25 @@ const Appointments = () => {
     if (timeRange !== "all") {
       const hour = parseInt(appointment.time.split(':')[0]);
       const isPM = appointment.time.includes('PM');
-      const hour24 = isPM && hour !== 12 ? hour + 12 : hour;
+      let hour24 = isPM && hour !== 12 ? hour + 12 : hour;
+      if (!isPM && hour === 12) hour24 = 0; // Handle 12 AM
+      
       switch (timeRange) {
         case "morning":
-          if (hour24 < 8 || hour24 >= 12) return false;
+          // 6 AM to 12 PM (6-11)
+          if (hour24 < 6 || hour24 >= 12) return false;
           break;
         case "afternoon":
+          // 12 PM to 5 PM (12-16)
           if (hour24 < 12 || hour24 >= 17) return false;
           break;
         case "evening":
-          if (hour24 < 17 || hour24 >= 20) return false;
+          // 5 PM to 9 PM (17-20)
+          if (hour24 < 17 || hour24 >= 21) return false;
+          break;
+        case "night":
+          // 9 PM to 6 AM (21-23, 0-5)
+          if (hour24 < 21 && hour24 >= 6) return false;
           break;
       }
     }

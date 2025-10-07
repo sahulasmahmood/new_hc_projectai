@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Heart, Save, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Heart, Save, X, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 
@@ -39,12 +40,21 @@ interface VitalsData {
   weight: string;
   height: string;
   recordedBy: string;
+  recordedByName: string;
   notes: string;
+}
+
+interface Staff {
+  id: number;
+  name: string;
+  role: string;
 }
 
 const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDialogProps) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
   const [vitalsData, setVitalsData] = useState<VitalsData>({
     bloodPressureSys: "",
     bloodPressureDia: "",
@@ -55,21 +65,50 @@ const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDia
     weight: "",
     height: "",
     recordedBy: "Nurse",
+    recordedByName: "",
     notes: ""
   });
 
-  // Load existing vitals if any
+  // Load existing vitals and staff data
   useEffect(() => {
     if (isOpen && appointment) {
       loadExistingVitals();
+      loadStaff();
     }
   }, [isOpen, appointment]);
+
+  const loadStaff = async () => {
+    try {
+      setLoadingStaff(true);
+      const response = await api.get('/staff');
+      // Filter to show only nurses
+      const nurses = response.data.filter((s: Staff) => s.role === 'Nurse');
+      setStaff(nurses);
+    } catch (error) {
+      console.error('Error loading staff:', error);
+    } finally {
+      setLoadingStaff(false);
+    }
+  };
 
   const loadExistingVitals = async () => {
     try {
       const response = await api.get(`/vitals/patient/${appointment.patientId}/appointment/${appointment.id}`);
       if (response.data) {
         const vitals = response.data;
+        // Parse recordedBy to extract name and role
+        let recordedByName = "";
+        let recordedByRole = "Nurse";
+        if (vitals.recordedBy) {
+          const match = vitals.recordedBy.match(/^(.+?)\s*\((.+?)\)$/);
+          if (match) {
+            recordedByName = match[1];
+            recordedByRole = match[2];
+          } else {
+            recordedByRole = vitals.recordedBy;
+          }
+        }
+        
         setVitalsData({
           bloodPressureSys: vitals.bloodPressureSys?.toString() || "",
           bloodPressureDia: vitals.bloodPressureDia?.toString() || "",
@@ -79,7 +118,8 @@ const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDia
           oxygenSaturation: vitals.oxygenSaturation?.toString() || "",
           weight: vitals.weight?.toString() || "",
           height: vitals.height?.toString() || "",
-          recordedBy: vitals.recordedBy || "Nurse",
+          recordedBy: recordedByRole,
+          recordedByName: recordedByName,
           notes: vitals.notes || ""
         });
       }
@@ -138,9 +178,21 @@ const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDia
       weight: "",
       height: "",
       recordedBy: "Nurse",
+      recordedByName: "",
       notes: ""
     });
     onClose();
+  };
+
+  const handleStaffSelection = (staffId: string) => {
+    const selectedStaff = staff.find(s => s.id.toString() === staffId);
+    if (selectedStaff) {
+      setVitalsData(prev => ({
+        ...prev,
+        recordedBy: selectedStaff.role,
+        recordedByName: selectedStaff.name
+      }));
+    }
   };
 
   return (
@@ -266,11 +318,33 @@ const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDia
             {/* Recorded By */}
             <div className="space-y-2">
               <Label>Recorded By</Label>
-              <Input
-                placeholder="e.g., Nurse, Doctor"
-                value={vitalsData.recordedBy}
-                onChange={(e) => handleInputChange("recordedBy", e.target.value)}
-              />
+              <Select 
+                value={vitalsData.recordedByName ? staff.find(s => s.name === vitalsData.recordedByName)?.id.toString() || "" : ""} 
+                onValueChange={handleStaffSelection}
+                disabled={loadingStaff}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingStaff ? "Loading staff..." : "Select staff member"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {staff.map((member) => (
+                    <SelectItem key={member.id} value={member.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <div>
+                          <span className="font-medium">{member.name}</span>
+                          <span className="text-xs text-gray-500 ml-2">({member.role})</span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {vitalsData.recordedByName && (
+                <div className="text-xs text-gray-600">
+                  Recording as: <span className="font-medium">{vitalsData.recordedByName}</span> ({vitalsData.recordedBy})
+                </div>
+              )}
             </div>
           </div>
 

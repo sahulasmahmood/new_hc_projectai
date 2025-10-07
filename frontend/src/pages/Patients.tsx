@@ -55,8 +55,16 @@ interface Patient {
   consultationStatus?: 'active' | 'completed' | null;
   consultationStartTime?: string;
   activeAppointmentId?: number;
+  activeDoctorName?: string; // Add doctor name for active consultations
   hasUpcomingAppointments?: boolean;
   upcomingAppointmentCount?: number;
+  emergencyContacts?: Array<{
+    id: number;
+    name: string;
+    relationship?: string;
+    phone: string;
+    isPrimary: boolean;
+  }>;
 }
 
 const Patients = () => {
@@ -540,7 +548,12 @@ const Patients = () => {
                   {patient.consultationStatus === 'active' && patient.consultationStartTime && (
                     <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
                       <Clock className="h-4 w-4" />
-                      <span>Consultation started: {new Date(patient.consultationStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({new Date(patient.consultationStartTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })})</span>
+                      <div className="flex flex-col">
+                        <span>Consultation started: {new Date(patient.consultationStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({new Date(patient.consultationStartTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })})</span>
+                        {patient.activeDoctorName && (
+                          <span className="text-xs">with Dr. {patient.activeDoctorName}</span>
+                        )}
+                      </div>
                     </div>
                   )}
                   </div>

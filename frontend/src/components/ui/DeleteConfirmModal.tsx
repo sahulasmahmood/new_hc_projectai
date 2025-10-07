@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Trash2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,6 +63,9 @@ const DeleteConfirmModal = ({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {description}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="text-center">
@@ -72,9 +75,6 @@ const DeleteConfirmModal = ({
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               Are you sure you want to {confirmText.toLowerCase()} this {itemName.toLowerCase()}?
             </h3>
-            <p className="text-sm text-gray-600">
-              {description}
-            </p>
           </div>
 
           <div className="flex gap-2 pt-4">

@@ -61,7 +61,13 @@ const getAllPatients = async (req, res) => {
           orderBy: { date: 'desc' },
           take: 5 // Get more appointments to find active consultation
         },
-        medicalReports: true
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
       }
     });
 
@@ -102,6 +108,7 @@ const getAllPatients = async (req, res) => {
         activeAppointmentId: activeConsultation?.id || null,
         consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
         consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+        activeDoctorName: activeConsultation?.doctorName || null, // Add doctor name for active consultations
         hasUpcomingAppointments: totalUpcoming > 0,
         upcomingAppointmentCount: totalUpcoming,
         appointments: undefined, // Remove appointments from response
@@ -138,7 +145,13 @@ const getPatientById = async (req, res) => {
           orderBy: { date: 'desc' },
           take: 20 // Get more appointments to find active consultation
         },
-        medicalReports: true
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
       }
     });
 
@@ -181,6 +194,7 @@ const getPatientById = async (req, res) => {
       activeAppointmentId: activeConsultation?.id || null,
       consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
       consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+      activeDoctorName: activeConsultation?.doctorName || null, // Add doctor name for active consultations
       hasUpcomingAppointments: totalUpcoming > 0,
       upcomingAppointmentCount: totalUpcoming,
       appointments: undefined, // Remove appointments from response
@@ -203,11 +217,13 @@ const createPatient = async (req, res) => {
       age,
       gender,
       phone,
+      phoneRelationship,
       email,
       condition,
       allergies,
       emergencyContact,
       emergencyPhone,
+      emergencyContacts, // New field for multiple emergency contacts
       address,
       abhaId,
       createdFromEmergency = false
@@ -306,6 +322,7 @@ const createPatient = async (req, res) => {
         age: parseInt(age),
         gender,
         phone,
+        phoneRelationship: phoneRelationship || null,
         email,
         condition,
         allergies: processedAllergies,
@@ -317,6 +334,42 @@ const createPatient = async (req, res) => {
         createdFromEmergency
       }
     });
+
+    // Handle multiple emergency contacts
+    let parsedEmergencyContacts = emergencyContacts;
+    
+    // Parse if it's a string (from FormData)
+    if (typeof emergencyContacts === 'string') {
+      try {
+        parsedEmergencyContacts = JSON.parse(emergencyContacts);
+      } catch (e) {
+        console.error('Error parsing emergency contacts:', e);
+        parsedEmergencyContacts = [];
+      }
+    }
+    
+    if (parsedEmergencyContacts && Array.isArray(parsedEmergencyContacts) && parsedEmergencyContacts.length > 0) {
+      const validContacts = parsedEmergencyContacts.filter(contact => 
+        contact.name && contact.name.trim() && 
+        contact.phone && contact.phone.trim() && 
+        /^\d+$/.test(contact.phone.trim()) // Only numeric phone numbers
+      );
+
+      if (validContacts.length > 0) {
+        // Create emergency contacts
+        const contactsData = validContacts.map((contact, index) => ({
+          patientId: patient.id,
+          name: contact.name.trim(),
+          relationship: contact.relationship?.trim() || null,
+          phone: contact.phone.trim(),
+          isPrimary: index === 0 // First contact is primary
+        }));
+
+        await prisma.patientEmergencyContact.createMany({
+          data: contactsData
+        });
+      }
+    }
 
     // Handle multiple file uploads with notes/types
     if (req.files && req.files.length > 0) {
@@ -334,10 +387,18 @@ const createPatient = async (req, res) => {
       }
     }
 
-    // Return patient with report count
+    // Return patient with report count and emergency contacts
     const patientWithReports = await prisma.patient.findUnique({
       where: { id: patient.id },
-      include: { medicalReports: true }
+      include: { 
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
     });
     res.status(201).json({
       ...patientWithReports,
@@ -361,11 +422,13 @@ const updatePatient = async (req, res) => {
       age,
       gender,
       phone,
+      phoneRelationship,
       email,
       condition,
       allergies,
       emergencyContact,
       emergencyPhone,
+      emergencyContacts, // New field for multiple emergency contacts
       address,
       status
     } = req.body;
@@ -386,6 +449,7 @@ const updatePatient = async (req, res) => {
       age: age ? parseInt(age) : undefined,
       gender,
       phone,
+      phoneRelationship: phoneRelationship || null,
       email,
       condition,
       allergies: processedAllergies,
@@ -400,6 +464,48 @@ const updatePatient = async (req, res) => {
       where: { id: parseInt(id) },
       data: updateData
     });
+
+    // Handle multiple emergency contacts update
+    let parsedEmergencyContacts = emergencyContacts;
+    
+    // Parse if it's a string (from FormData)
+    if (typeof emergencyContacts === 'string') {
+      try {
+        parsedEmergencyContacts = JSON.parse(emergencyContacts);
+      } catch (e) {
+        console.error('Error parsing emergency contacts:', e);
+        parsedEmergencyContacts = null;
+      }
+    }
+    
+    if (parsedEmergencyContacts && Array.isArray(parsedEmergencyContacts)) {
+      // Delete existing emergency contacts
+      await prisma.patientEmergencyContact.deleteMany({
+        where: { patientId: parseInt(id) }
+      });
+
+      // Filter and validate new contacts
+      const validContacts = parsedEmergencyContacts.filter(contact => 
+        contact.name && contact.name.trim() && 
+        contact.phone && contact.phone.trim() && 
+        /^\d+$/.test(contact.phone.trim()) // Only numeric phone numbers
+      );
+
+      if (validContacts.length > 0) {
+        // Create new emergency contacts
+        const contactsData = validContacts.map((contact, index) => ({
+          patientId: parseInt(id),
+          name: contact.name.trim(),
+          relationship: contact.relationship?.trim() || null,
+          phone: contact.phone.trim(),
+          isPrimary: index === 0 // First contact is primary
+        }));
+
+        await prisma.patientEmergencyContact.createMany({
+          data: contactsData
+        });
+      }
+    }
 
     // Handle multiple file uploads with notes/types
     if (req.files && req.files.length > 0) {
@@ -416,10 +522,18 @@ const updatePatient = async (req, res) => {
       }
     }
 
-    // Return patient with report count
+    // Return patient with report count and emergency contacts
     const patientWithReports = await prisma.patient.findUnique({
       where: { id: updatedPatient.id },
-      include: { medicalReports: true }
+      include: { 
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
     });
     res.json({
       ...patientWithReports,

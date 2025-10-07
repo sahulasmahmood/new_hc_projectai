@@ -637,6 +637,7 @@ const validateConsultationStartTiming = async (req, res) => {
       appointment: {
         id: appointment.id,
         patientName: appointment.patientName,
+        doctorName: appointment.doctorName,
         officialSlot: timeDisplay.officialSlot,
         scheduledDuration: timeDisplay.duration
       }

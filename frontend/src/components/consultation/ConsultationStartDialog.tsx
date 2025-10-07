@@ -39,6 +39,7 @@ interface ValidationResponse {
     patientName: string;
     officialSlot: string;
     scheduledDuration: number;
+    doctorName?: string;
   };
 }
 
@@ -200,6 +201,11 @@ const ConsultationStartDialog = ({
               <div className="text-sm font-medium text-gray-900">
                 {validation.appointment.patientName}
               </div>
+              {validation.appointment.doctorName && (
+                <div className="text-sm text-gray-600 flex items-center gap-1">
+                  <span className="font-medium">Doctor:</span> Dr. {validation.appointment.doctorName}
+                </div>
+              )}
               <div className="text-sm text-gray-600">
                 Official Time Slot: {validation.appointment.officialSlot}
               </div>

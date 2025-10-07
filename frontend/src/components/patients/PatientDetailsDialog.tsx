@@ -44,7 +44,12 @@ const PatientDetailsDialog = ({ patient, trigger }: PatientDetailsDialogProps) =
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm">{patient.phone}</span>
+                  <div className="flex flex-col">
+                    <span className="text-sm">{patient.phone}</span>
+                    {patient.phoneRelationship && (
+                      <span className="text-xs text-blue-600">Relationship: {patient.phoneRelationship}</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="h-4 w-4 text-gray-400" />
@@ -113,10 +118,30 @@ const PatientDetailsDialog = ({ patient, trigger }: PatientDetailsDialogProps) =
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Emergency Contact</CardTitle>
+              <CardTitle className="text-lg">Emergency Contacts</CardTitle>
             </CardHeader>
             <CardContent>
-              {patient.emergencyContact ? (
+              {patient.emergencyContacts && patient.emergencyContacts.length > 0 ? (
+                <div className="space-y-3">
+                  {patient.emergencyContacts.map((contact: any, index: number) => (
+                    <div key={contact.id || index} className="p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium">{contact.name}</p>
+                        {contact.isPrimary && (
+                          <Badge className="bg-blue-100 text-blue-800 text-xs">Primary</Badge>
+                        )}
+                      </div>
+                      {contact.relationship && (
+                        <p className="text-xs text-gray-600 mb-1">{contact.relationship}</p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-mono">{contact.phone}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : patient.emergencyContact ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">{patient.emergencyContact}</p>
                   <div className="flex items-center gap-2">
@@ -125,10 +150,24 @@ const PatientDetailsDialog = ({ patient, trigger }: PatientDetailsDialogProps) =
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">No emergency contact on file</p>
+                <p className="text-sm text-gray-500">No emergency contacts on file</p>
               )}
             </CardContent>
           </Card>
+
+          {patient.address && (
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Home className="h-5 w-5" />
+                  Address
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{patient.address}</p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </DialogContent>
     </Dialog>

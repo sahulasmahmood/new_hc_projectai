@@ -47,36 +47,55 @@ model Appointment {
 }
 
 model Patient {
-  id                          Int             @id @default(autoincrement())
-  visibleId                   String          @unique
-  name                        String          @db.VarChar(100)
+  id                          Int                    @id @default(autoincrement())
+  visibleId                   String                 @unique
+  name                        String                 @db.VarChar(100)
   age                         Int
-  gender                      String          @db.VarChar(20)
-  phone                       String          @db.VarChar(20)
-  email                       String?         @db.VarChar(100)
-  condition                   String?         @db.VarChar(200)
-  status                      String          @default("Active") @db.VarChar(50)
+  gender                      String                 @db.VarChar(20)
+  phone                       String                 @db.VarChar(20)
+  phoneRelationship           String?                @db.VarChar(50) // Relationship if phone is shared (e.g., "Father", "Mother")
+  email                       String?                @db.VarChar(100)
+  condition                   String?                @db.VarChar(200)
+  status                      String                 @default("Active") @db.VarChar(50)
   allergies                   String[]
   lastVisit                   DateTime?
-  abhaId                      String?         @unique @db.VarChar(50)
-  abhaVerified                Boolean         @default(false)
-  emergencyContact            String?         @db.VarChar(100)
-  emergencyPhone              String?         @db.VarChar(20)
-  address                     String?         @db.Text
-  consultationStatus          String?         @db.VarChar(20) // 'active', 'completed', null
+  abhaId                      String?                @unique @db.VarChar(50)
+  abhaVerified                Boolean                @default(false)
+  emergencyContact            String?                @db.VarChar(100)
+  emergencyPhone              String?                @db.VarChar(20)
+  address                     String?                @db.Text
+  consultationStatus          String?                @db.VarChar(20) // 'active', 'completed', null
   // Official consultation time (for business consistency)
   consultationStartTime       DateTime? // Official scheduled start time
   // Actual consultation time (for analysis)
   actualConsultationStartTime DateTime? // When consultation actually started
-  createdAt                   DateTime        @default(now())
-  updatedAt                   DateTime        @updatedAt
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime               @updatedAt
   appointments                Appointment[]
   emergencyCases              EmergencyCase[]
-  createdFromEmergency        Boolean         @default(false)
+  createdFromEmergency        Boolean                @default(false)
   medicalReports              MedicalReport[] // New relation
   prescriptions               Prescription[] // Relation to prescriptions
   vitals                      PatientVitals[] // Relation to vitals
   bills                       Bill[] // Relation to bills
+  emergencyContacts           PatientEmergencyContact[] // Multiple emergency contacts
+
+  @@index([phone])
+}
+
+model PatientEmergencyContact {
+  id           Int     @id @default(autoincrement())
+  patientId    Int
+  patient      Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  name         String  @db.VarChar(100)
+  relationship String? @db.VarChar(50) // e.g., "Father", "Mother", "Spouse", "Friend"
+  phone        String  @db.VarChar(20)
+  isPrimary    Boolean @default(false) // Mark one as primary contact
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([patientId, isPrimary])
 }
 
 model AppointmentSettings {

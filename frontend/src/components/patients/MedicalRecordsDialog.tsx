@@ -7,6 +7,7 @@ import { FileText, Loader2 } from "lucide-react";
 import MedicalRecordsHeader from "./medical-records/MedicalRecordsHeader";
 import VisitsTab from "./medical-records/VisitsTab";
 import PrescriptionsTab from "./medical-records/PrescriptionsTab";
+import VitalsHistoryTab from "./medical-records/VitalsHistoryTab";
 import api from "@/lib/api";
 
 interface MedicalRecordsDialogProps {
@@ -526,9 +527,10 @@ This is a confidential medical record from MediClinic.`;
           </div>
         ) : (
           <Tabs defaultValue={defaultActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="visits">Medical Visits ({medicalRecords.visits.length})</TabsTrigger>
               <TabsTrigger value="prescriptions">Prescriptions ({medicalRecords.prescriptions.length})</TabsTrigger>
+              <TabsTrigger value="vitals">Vitals History</TabsTrigger>
             </TabsList>
 
             <TabsContent value="visits">
@@ -550,6 +552,13 @@ This is a confidential medical record from MediClinic.`;
                 patientName={patient.name}
                 patientId={patient.visibleId || patient.id}
                 prescriptionToOpen={prescriptionToOpen}
+              />
+            </TabsContent>
+
+            <TabsContent value="vitals">
+              <VitalsHistoryTab
+                patientId={patient.id.toString()}
+                patientName={patient.name}
               />
             </TabsContent>
           </Tabs>

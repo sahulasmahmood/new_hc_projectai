@@ -111,9 +111,11 @@ const Settings = () => {
   // Prevent rendering until hospitalSettings is loaded
   if (loading || !hospitalSettings) {
     return (
-      <div className="flex justify-center items-center h-96">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-500 mx-auto"></div>
-        <span className="ml-4 text-gray-600">Loading settings...</span>
+      <div className="p-6">
+        <div className="flex flex-col justify-center items-center h-96">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-500"></div>
+          <p className="mt-4 text-gray-600">Loading settings...</p>
+        </div>
       </div>
     );
   }
