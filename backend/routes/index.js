@@ -10,6 +10,7 @@ const aiRouter = require('./ai');
 const staffRouter = require('./staff');
 const prescriptionsRouter = require('./prescriptions');
 const vitalsRouter = require('./vitals');
+const vitalsSettingsRouter = require('./vitalsSettings');
 const medicinesRouter = require('./medicines');
 const reportsRouter = require('./reports');
 const billingRouter = require("./billing")
@@ -30,6 +31,7 @@ router.use('/ai', aiRouter);
 router.use('/staff', staffRouter);
 router.use('/prescriptions', prescriptionsRouter);
 router.use('/vitals', vitalsRouter);
+router.use('/vitals-settings', vitalsSettingsRouter);
 router.use('/medicines', medicinesRouter);
 router.use('/reports', reportsRouter);
 router.use("/billing", billingRouter)

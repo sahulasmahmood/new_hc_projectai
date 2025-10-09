@@ -17,6 +17,7 @@ const {
 } = require('./inngest/functions/appointment-automation');
 const { initializeDefaultRoles } = require('./utils/initializeDefaultRoles');
 const { initializeDefaultDepartments } = require('./utils/initializeDefaultDepartments');
+const { initializeDefaultVitalsSettings } = require('./utils/initializeDefaultVitalsSettings');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -54,12 +55,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Initialize default roles and departments on startup
+// Initialize default roles, departments, and vitals settings on startup
 Promise.all([
   initializeDefaultRoles(),
-  initializeDefaultDepartments()
+  initializeDefaultDepartments(),
+  initializeDefaultVitalsSettings()
 ]).then(() => {
-  console.log('Default roles and departments initialized');
+  console.log('Default roles, departments, and vitals settings initialized');
 }).catch(err => {
   console.error('Failed to initialize defaults:', err);
 });

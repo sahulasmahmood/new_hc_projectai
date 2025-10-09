@@ -17,6 +17,7 @@ import {
   Activity
 } from "lucide-react";
 import api from "@/lib/api";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 interface VitalsRecord {
   id: number;
@@ -48,6 +49,15 @@ const VitalsHistoryTab = ({ patientId, patientName }: VitalsHistoryTabProps) => 
   const [vitalsHistory, setVitalsHistory] = useState<VitalsRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAllRecords, setShowAllRecords] = useState(false);
+  
+  // Use dynamic vitals settings
+  const { 
+    getBloodPressureStatus, 
+    getStatus, 
+    getNormalRangeText,
+    getBloodPressureRangeText,
+    loading: settingsLoading 
+  } = useVitalsSettings();
 
   const RECENT_LIMIT = 10;
   const displayedRecords = showAllRecords ? vitalsHistory : vitalsHistory.slice(0, RECENT_LIMIT);
@@ -84,40 +94,43 @@ const VitalsHistoryTab = ({ patientId, patientName }: VitalsHistoryTabProps) => 
     return <Minus className="h-4 w-4 text-gray-400" />;
   };
 
-  const getBloodPressureStatus = (sys?: number, dia?: number) => {
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'normal':
+        return <Badge className="bg-green-100 text-green-800">Normal</Badge>;
+      case 'low':
+        return <Badge className="bg-blue-100 text-blue-800">Low</Badge>;
+      case 'high':
+        return <Badge className="bg-red-100 text-red-800">High</Badge>;
+      case 'critical':
+        return <Badge className="bg-red-600 text-white">Critical</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  const getBPStatusBadge = (sys?: number, dia?: number) => {
     if (!sys || !dia) return null;
-    
-    if (sys >= 140 || dia >= 90) {
-      return <Badge className="bg-red-100 text-red-800">High</Badge>;
-    } else if (sys < 90 || dia < 60) {
-      return <Badge className="bg-blue-100 text-blue-800">Low</Badge>;
-    } else {
-      return <Badge className="bg-green-100 text-green-800">Normal</Badge>;
-    }
+    const status = getBloodPressureStatus(sys, dia);
+    return getStatusBadge(status);
   };
 
-  const getHeartRateStatus = (hr?: number) => {
+  const getHeartRateStatusBadge = (hr?: number) => {
     if (!hr) return null;
-    
-    if (hr > 100) {
-      return <Badge className="bg-red-100 text-red-800">High</Badge>;
-    } else if (hr < 60) {
-      return <Badge className="bg-blue-100 text-blue-800">Low</Badge>;
-    } else {
-      return <Badge className="bg-green-100 text-green-800">Normal</Badge>;
-    }
+    const status = getStatus(hr, 'heartRate');
+    return getStatusBadge(status);
   };
 
-  const getTemperatureStatus = (temp?: number) => {
+  const getTemperatureStatusBadge = (temp?: number) => {
     if (!temp) return null;
-    
-    if (temp > 100.4) {
-      return <Badge className="bg-red-100 text-red-800">Fever</Badge>;
-    } else if (temp < 97.0) {
-      return <Badge className="bg-blue-100 text-blue-800">Low</Badge>;
-    } else {
-      return <Badge className="bg-green-100 text-green-800">Normal</Badge>;
-    }
+    const status = getStatus(temp, 'temperature');
+    return getStatusBadge(status);
+  };
+
+  const getOxygenSaturationStatusBadge = (spo2?: number) => {
+    if (!spo2) return null;
+    const status = getStatus(spo2, 'oxygenSaturation');
+    return getStatusBadge(status);
   };
 
   const handlePrintVitals = () => {
@@ -371,10 +384,19 @@ This is a confidential medical record.`;
                           <div className="flex items-center gap-2">
                             {record.bloodPressureSys && record.bloodPressureDia ? (
                               <>
-                                <span className="font-mono">
-                                  {record.bloodPressureSys}/{record.bloodPressureDia}
-                                </span>
-                                {getBloodPressureStatus(record.bloodPressureSys, record.bloodPressureDia)}
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-mono cursor-help">
+                                        {record.bloodPressureSys}/{record.bloodPressureDia}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Normal: {getBloodPressureRangeText()}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                {getBPStatusBadge(record.bloodPressureSys, record.bloodPressureDia)}
                                 {previousRecord?.bloodPressureSys && 
                                   getVitalTrend(record.bloodPressureSys, previousRecord.bloodPressureSys)}
                               </>
@@ -387,8 +409,17 @@ This is a confidential medical record.`;
                           <div className="flex items-center gap-2">
                             {record.heartRate ? (
                               <>
-                                <span className="font-mono">{record.heartRate}</span>
-                                {getHeartRateStatus(record.heartRate)}
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-mono cursor-help">{record.heartRate}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Normal: {getNormalRangeText('heartRate')}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                {getHeartRateStatusBadge(record.heartRate)}
                                 {previousRecord?.heartRate && 
                                   getVitalTrend(record.heartRate, previousRecord.heartRate)}
                               </>
@@ -401,8 +432,17 @@ This is a confidential medical record.`;
                           <div className="flex items-center gap-2">
                             {record.temperature ? (
                               <>
-                                <span className="font-mono">{record.temperature}°F</span>
-                                {getTemperatureStatus(record.temperature)}
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-mono cursor-help">{record.temperature}°F</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Normal: {getNormalRangeText('temperature')}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                {getTemperatureStatusBadge(record.temperature)}
                                 {previousRecord?.temperature && 
                                   getVitalTrend(record.temperature, previousRecord.temperature)}
                               </>
@@ -413,7 +453,16 @@ This is a confidential medical record.`;
                         </TableCell>
                         <TableCell>
                           {record.respiratoryRate ? (
-                            <span className="font-mono">{record.respiratoryRate}/min</span>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="font-mono cursor-help">{record.respiratoryRate}/min</span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Normal: {getNormalRangeText('respiratoryRate')}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           ) : (
                             <span className="text-gray-400">N/A</span>
                           )}
@@ -421,10 +470,17 @@ This is a confidential medical record.`;
                         <TableCell>
                           {record.oxygenSaturation ? (
                             <div className="flex items-center gap-2">
-                              <span className="font-mono">{record.oxygenSaturation}%</span>
-                              {record.oxygenSaturation < 95 && (
-                                <Badge className="bg-red-100 text-red-800">Low</Badge>
-                              )}
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-mono cursor-help">{record.oxygenSaturation}%</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Normal: {getNormalRangeText('oxygenSaturation')}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                              {getOxygenSaturationStatusBadge(record.oxygenSaturation)}
                             </div>
                           ) : (
                             <span className="text-gray-400">N/A</span>

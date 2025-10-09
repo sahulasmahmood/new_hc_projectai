@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Heart, Save, X, User } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Heart, Save, X, User, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/lib/api";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 interface Appointment {
   id: number;
@@ -52,6 +54,7 @@ interface Staff {
 
 const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDialogProps) => {
   const { toast } = useToast();
+  const { settings, getNormalRangeText, getBloodPressureRangeText } = useVitalsSettings();
   const [loading, setLoading] = useState(false);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
@@ -227,93 +230,235 @@ const VitalsDialog = ({ appointment, isOpen, onClose, onVitalsSaved }: VitalsDia
           {/* Vitals Form */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Blood Pressure */}
-            <div className="space-y-2">
-              <Label>Blood Pressure (mmHg)</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Systolic"
-                  value={vitalsData.bloodPressureSys}
-                  onChange={(e) => handleInputChange("bloodPressureSys", e.target.value)}
-                  type="number"
-                />
-                <span className="self-center">/</span>
-                <Input
-                  placeholder="Diastolic"
-                  value={vitalsData.bloodPressureDia}
-                  onChange={(e) => handleInputChange("bloodPressureDia", e.target.value)}
-                  type="number"
-                />
+            {settings.bloodPressureSys?.isActive && settings.bloodPressureDia?.isActive ? (
+              <div className="space-y-2">
+                <Label>Blood Pressure (mmHg)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Systolic"
+                    value={vitalsData.bloodPressureSys}
+                    onChange={(e) => handleInputChange("bloodPressureSys", e.target.value)}
+                    type="number"
+                  />
+                  <span className="self-center">/</span>
+                  <Input
+                    placeholder="Diastolic"
+                    value={vitalsData.bloodPressureDia}
+                    onChange={(e) => handleInputChange("bloodPressureDia", e.target.value)}
+                    type="number"
+                  />
+                </div>
+                <p className="text-xs text-gray-500">Normal: {getBloodPressureRangeText()}</p>
               </div>
-            </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Blood Pressure (mmHg)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input placeholder="Systolic" disabled />
+                        <span className="self-center">/</span>
+                        <Input placeholder="Diastolic" disabled />
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Heart Rate */}
-            <div className="space-y-2">
-              <Label>Heart Rate (bpm)</Label>
-              <Input
-                placeholder="e.g., 72"
-                value={vitalsData.heartRate}
-                onChange={(e) => handleInputChange("heartRate", e.target.value)}
-                type="number"
-              />
-            </div>
+            {settings.heartRate?.isActive ? (
+              <div className="space-y-2">
+                <Label>Heart Rate (bpm)</Label>
+                <Input
+                  placeholder="e.g., 72"
+                  value={vitalsData.heartRate}
+                  onChange={(e) => handleInputChange("heartRate", e.target.value)}
+                  type="number"
+                />
+                <p className="text-xs text-gray-500">Normal: {getNormalRangeText('heartRate')}</p>
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Heart Rate (bpm)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 72" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Temperature */}
-            <div className="space-y-2">
-              <Label>Temperature (°F)</Label>
-              <Input
-                placeholder="e.g., 98.6"
-                value={vitalsData.temperature}
-                onChange={(e) => handleInputChange("temperature", e.target.value)}
-                type="number"
-                step="0.1"
-              />
-            </div>
+            {settings.temperature?.isActive ? (
+              <div className="space-y-2">
+                <Label>Temperature (°F)</Label>
+                <Input
+                  placeholder="e.g., 98.6"
+                  value={vitalsData.temperature}
+                  onChange={(e) => handleInputChange("temperature", e.target.value)}
+                  type="number"
+                  step="0.1"
+                />
+                <p className="text-xs text-gray-500">Normal: {getNormalRangeText('temperature')}</p>
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Temperature (°F)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 98.6" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Respiratory Rate */}
-            <div className="space-y-2">
-              <Label>Respiratory Rate (per min)</Label>
-              <Input
-                placeholder="e.g., 16"
-                value={vitalsData.respiratoryRate}
-                onChange={(e) => handleInputChange("respiratoryRate", e.target.value)}
-                type="number"
-              />
-            </div>
+            {settings.respiratoryRate?.isActive ? (
+              <div className="space-y-2">
+                <Label>Respiratory Rate (per min)</Label>
+                <Input
+                  placeholder="e.g., 16"
+                  value={vitalsData.respiratoryRate}
+                  onChange={(e) => handleInputChange("respiratoryRate", e.target.value)}
+                  type="number"
+                />
+                <p className="text-xs text-gray-500">Normal: {getNormalRangeText('respiratoryRate')}</p>
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Respiratory Rate (per min)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 16" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Oxygen Saturation */}
-            <div className="space-y-2">
-              <Label>Oxygen Saturation (%)</Label>
-              <Input
-                placeholder="e.g., 98"
-                value={vitalsData.oxygenSaturation}
-                onChange={(e) => handleInputChange("oxygenSaturation", e.target.value)}
-                type="number"
-              />
-            </div>
+            {settings.oxygenSaturation?.isActive ? (
+              <div className="space-y-2">
+                <Label>Oxygen Saturation (%)</Label>
+                <Input
+                  placeholder="e.g., 98"
+                  value={vitalsData.oxygenSaturation}
+                  onChange={(e) => handleInputChange("oxygenSaturation", e.target.value)}
+                  type="number"
+                />
+                <p className="text-xs text-gray-500">Normal: {getNormalRangeText('oxygenSaturation')}</p>
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Oxygen Saturation (%)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 98" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Weight */}
-            <div className="space-y-2">
-              <Label>Weight (lbs)</Label>
-              <Input
-                placeholder="e.g., 150"
-                value={vitalsData.weight}
-                onChange={(e) => handleInputChange("weight", e.target.value)}
-                type="number"
-                step="0.1"
-              />
-            </div>
+            {settings.weight?.isActive ? (
+              <div className="space-y-2">
+                <Label>Weight (lbs)</Label>
+                <Input
+                  placeholder="e.g., 150"
+                  value={vitalsData.weight}
+                  onChange={(e) => handleInputChange("weight", e.target.value)}
+                  type="number"
+                  step="0.1"
+                />
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Weight (lbs)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 150" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Height */}
-            <div className="space-y-2">
-              <Label>Height (inches)</Label>
-              <Input
-                placeholder="e.g., 68"
-                value={vitalsData.height}
-                onChange={(e) => handleInputChange("height", e.target.value)}
-                type="number"
-                step="0.1"
-              />
-            </div>
+            {settings.height?.isActive ? (
+              <div className="space-y-2">
+                <Label>Height (inches)</Label>
+                <Input
+                  placeholder="e.g., 68"
+                  value={vitalsData.height}
+                  onChange={(e) => handleInputChange("height", e.target.value)}
+                  type="number"
+                  step="0.1"
+                />
+              </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-2 opacity-50">
+                      <Label className="flex items-center gap-2">
+                        Height (inches)
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                      </Label>
+                      <Input placeholder="e.g., 68" disabled />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>This vital is currently inactive in settings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* Recorded By */}
             <div className="space-y-2">

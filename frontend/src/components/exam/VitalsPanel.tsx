@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal";
 import api from "@/lib/api";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 interface VitalRecord {
   id: number;
@@ -53,6 +54,7 @@ interface VitalsApiResponse {
 
 const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
   const { toast } = useToast();
+  const { getBloodPressureStatus, getStatus, getNormalRangeText, getBloodPressureRangeText } = useVitalsSettings();
   const [vitals, setVitals] = useState({
     bloodPressure: { systolic: "", diastolic: "" },
     heartRate: "",
@@ -141,42 +143,50 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
         const sys = parseInt(String(value.sys));
         const dia = parseInt(String(value.dia));
         if (isNaN(sys) || isNaN(dia)) return "unknown";
-        if (sys >= 140 || dia >= 90) return "high";
-        if (sys >= 120 || dia >= 80) return "elevated";
-        return "normal";
+        const status = getBloodPressureStatus(sys, dia);
+        // Map dynamic status to display status
+        if (status === 'critical') return 'high';
+        if (status === 'high') return 'elevated';
+        return status;
       }
 
       case "hr": {
         if (value === null || value === undefined) return "unknown";
         const hr = parseInt(String(value));
         if (isNaN(hr)) return "unknown";
-        if (hr < 60 || hr > 100) return "elevated";
-        return "normal";
+        const status = getStatus(hr, 'heartRate');
+        // Map dynamic status to display status
+        if (status === 'critical' || status === 'high' || status === 'low') return 'elevated';
+        return status;
       }
 
       case "temp": {
         if (value === null || value === undefined) return "unknown";
         const temp = parseFloat(String(value));
         if (isNaN(temp)) return "unknown";
-        if (temp >= 100.4) return "high";
-        if (temp >= 99.1) return "elevated";
-        return "normal";
+        const status = getStatus(temp, 'temperature');
+        // Map dynamic status to display status
+        if (status === 'critical') return 'high';
+        if (status === 'high') return 'elevated';
+        return status;
       }
 
       case "spo2": {
         if (value === null || value === undefined) return "unknown";
         const spo2 = parseInt(String(value));
         if (isNaN(spo2)) return "unknown";
-        if (spo2 < 95) return "low";
-        return "normal";
+        const status = getStatus(spo2, 'oxygenSaturation');
+        return status;
       }
 
       case "rr": {
         if (value === null || value === undefined) return "unknown";
         const rr = parseInt(String(value));
         if (isNaN(rr)) return "unknown";
-        if (rr < 12 || rr > 20) return "elevated";
-        return "normal";
+        const status = getStatus(rr, 'respiratoryRate');
+        // Map dynamic status to display status
+        if (status === 'critical' || status === 'high' || status === 'low') return 'elevated';
+        return status;
       }
 
       default:
@@ -412,7 +422,7 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
                     <div className="text-center">
                       <div>Systolic (120) = heart contracts</div>
                       <div>Diastolic (80) = heart relaxes</div>
-                      <div className="font-semibold">Normal: 120/80</div>
+                      <div className="font-semibold">Normal: {getBloodPressureRangeText()}</div>
                     </div>
                     <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                   </div>
@@ -420,7 +430,7 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
               </div>
               <div className="flex gap-1 items-center">
                 <Input
-                  placeholder="120"
+                  placeholder="Sys"
                   value={vitals.bloodPressure.systolic}
                   onChange={(e) =>
                     setVitals({
@@ -435,7 +445,7 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
                 />
                 <span className="text-gray-500 font-medium">/</span>
                 <Input
-                  placeholder="80"
+                  placeholder="Dia"
                   value={vitals.bloodPressure.diastolic}
                   onChange={(e) =>
                     setVitals({
@@ -450,41 +460,44 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
                 />
               </div>
               <div className="text-xs text-gray-500 text-center">
-                Systolic / Diastolic
+                Normal: {getBloodPressureRangeText()}
               </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Heart Rate (bpm)</label>
               <Input
-                placeholder="72"
+                placeholder="e.g., 72"
                 value={vitals.heartRate}
                 onChange={(e) =>
                   setVitals({ ...vitals, heartRate: e.target.value })
                 }
               />
+              <div className="text-xs text-gray-500">Normal: {getNormalRangeText('heartRate')}</div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Temperature (°F)</label>
               <Input
-                placeholder="98.6"
+                placeholder="e.g., 98.6"
                 value={vitals.temperature}
                 onChange={(e) =>
                   setVitals({ ...vitals, temperature: e.target.value })
                 }
               />
+              <div className="text-xs text-gray-500">Normal: {getNormalRangeText('temperature')}</div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Respiratory Rate</label>
               <Input
-                placeholder="16"
+                placeholder="e.g., 16"
                 value={vitals.respiratoryRate}
                 onChange={(e) =>
                   setVitals({ ...vitals, respiratoryRate: e.target.value })
                 }
               />
+              <div className="text-xs text-gray-500">Normal: {getNormalRangeText('respiratoryRate')}</div>
             </div>
 
             <div className="space-y-2">
@@ -492,12 +505,13 @@ const VitalsPanel = ({ patientId, appointmentId }: VitalsPanelProps) => {
                 Oxygen Saturation (%)
               </label>
               <Input
-                placeholder="98"
+                placeholder="e.g., 98"
                 value={vitals.oxygenSaturation}
                 onChange={(e) =>
                   setVitals({ ...vitals, oxygenSaturation: e.target.value })
                 }
               />
+              <div className="text-xs text-gray-500">Normal: {getNormalRangeText('oxygenSaturation')}</div>
             </div>
 
             <div className="space-y-2">

@@ -11,6 +11,7 @@ import { Plus, Clock, User, Phone, Activity, Siren, Heart, Zap, ArrowRightLeft, 
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
 import axios from "axios";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 const statusOptions = [
   "Waiting",
@@ -53,6 +54,14 @@ const transferHospitals = [
 ];
 
 const Emergency = () => {
+  // Use dynamic vitals settings
+  const { 
+    getBloodPressureStatus, 
+    getStatus, 
+    getNormalRangeText,
+    getBloodPressureRangeText 
+  } = useVitalsSettings();
+  
   const [selectedPriority, setSelectedPriority] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [emergencyCases, setEmergencyCases] = useState<EmergencyCase[]>([]);
@@ -435,55 +444,35 @@ const Emergency = () => {
     setFullChartOpen(true);
   };
 
-  // Helper functions for vitals
+  // Helper functions for vitals - now using dynamic settings
   const getBPStatus = (bp: string) => {
-    // Accepts '120/80' or single value like '140'
+    if (!bp) return 'unknown';
     const parts = bp.split('/').map(Number);
     if (parts.length === 1 || !parts[1]) {
-      const sys = parts[0];
-      if (!sys) return 'unknown';
-      if (sys >= 130) return 'high';
-      if (sys < 90) return 'low';
-      return 'normal';
-    } else {
-      const [sys, dia] = parts;
-      if (!sys || !dia) return 'unknown';
-      if (sys >= 130 || dia >= 80) return 'high';
-      if (sys < 90 || dia < 60) return 'low';
-      return 'normal';
+      // Single value provided (systolic only)
+      return getStatus(parts[0], 'bloodPressureSys');
     }
+    // Both systolic and diastolic
+    const [sys, dia] = parts;
+    return getBloodPressureStatus(sys, dia);
   };
+  
   const getPulseStatus = (pulse: string) => {
     const p = Number(pulse);
     if (!p) return 'unknown';
-    if (p < 60) return 'low';
-    if (p > 100) return 'high';
-    return 'normal';
+    return getStatus(p, 'heartRate');
   };
+  
   const getTempStatus = (temp: string) => {
-    // Accepts '99.2°F' or '37.5°C'
     const t = parseFloat(temp);
-    if (temp.includes('C')) {
-      if (t < 36.1) return 'low'; // 97.0°F = 36.1°C
-      if (t > 37.2) return 'high'; // 99.0°F = 37.2°C
-      return 'normal';
-    } else {
-      if (t < 97.0) return 'low';
-      if (t > 99.0) return 'high';
-      return 'normal';
-    }
+    if (!t) return 'unknown';
+    return getStatus(t, 'temperature');
   };
+  
   const getSpO2Status = (spo2: string) => {
     const s = Number(spo2.replace('%', ''));
     if (!s) return 'unknown';
-    if (s < 95) return 'low';
-    return 'normal';
-  };
-  const vitalRanges = {
-    bp: '90/60–120/80 mmHg',
-    pulse: '60–100 bpm',
-    temp: '97.0–99.0°F (36.1–37.2°C)',
-    spo2: '95–100%'
+    return getStatus(s, 'oxygenSaturation');
   };
 
   const handleOpenTransferDialog = (case_: EmergencyCase) => {
@@ -685,7 +674,7 @@ const Emergency = () => {
               <div className="grid grid-cols-4 gap-4">
                 <div>
                   <Input placeholder="BP" value={registerForm.bp} onChange={e => handleRegisterInput('bp', e.target.value)} />
-                  <div className="text-xs text-gray-500 mt-1">BP (mmHg), normal: 90/60–120/80</div>
+                  <div className="text-xs text-gray-500 mt-1">BP (mmHg), normal: {getBloodPressureRangeText()}</div>
                 </div>
                 <div>
                   <Input placeholder="Pulse" value={registerForm.pulse} onChange={e => handleRegisterInput('pulse', e.target.value)} />
@@ -1098,7 +1087,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Blood Pressure (BP)</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getBPStatus(fullChartCase.vitals.bp)==='normal' ? 'text-green-600' : getBPStatus(fullChartCase.vitals.bp)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.bp}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.bp}</span>
+                    <span className="text-xs text-gray-500">Normal: {getBloodPressureRangeText()}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getBPStatus(fullChartCase.vitals.bp)==='normal' ? 'bg-green-500' : getBPStatus(fullChartCase.vitals.bp)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -1109,7 +1098,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Pulse</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getPulseStatus(fullChartCase.vitals.pulse)==='normal' ? 'text-green-600' : getPulseStatus(fullChartCase.vitals.pulse)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.pulse}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.pulse}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('heartRate')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getPulseStatus(fullChartCase.vitals.pulse)==='normal' ? 'bg-green-500' : getPulseStatus(fullChartCase.vitals.pulse)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -1120,7 +1109,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Temperature</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getTempStatus(fullChartCase.vitals.temp)==='normal' ? 'text-green-600' : getTempStatus(fullChartCase.vitals.temp)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.temp}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.temp}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('temperature')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getTempStatus(fullChartCase.vitals.temp)==='normal' ? 'bg-green-500' : getTempStatus(fullChartCase.vitals.temp)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -1131,7 +1120,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">SpO2</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getSpO2Status(fullChartCase.vitals.spo2)==='normal' ? 'text-green-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.spo2}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.spo2}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('oxygenSaturation')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getSpO2Status(fullChartCase.vitals.spo2)==='normal' ? 'bg-green-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -1191,6 +1180,7 @@ const Emergency = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Input placeholder="BP (e.g. 120/80)" value={vitalsBP} onChange={e => setVitalsBP(e.target.value)} />
+              <div className="text-xs text-gray-500 mt-1">Normal: {getBloodPressureRangeText()}</div>
               <Input placeholder="Pulse (bpm)" value={vitalsPulse} onChange={e => setVitalsPulse(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-4">

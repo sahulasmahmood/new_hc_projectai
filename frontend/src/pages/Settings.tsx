@@ -36,6 +36,7 @@ import EmailConfiguration from "@/components/settings/EmailConfiguration";
 import CategoryManagement from "@/components/settings/CategoryManagement";
 import SupplierManagement from "@/components/settings/SupplierManagement";
 import StaffSettingsManagement from "@/components/settings/StaffSettingsManagement";
+import VitalsSettingsManagement from "@/components/settings/VitalsSettingsManagement";
 
 const defaultHospitalSettings = {
   name: "",
@@ -128,12 +129,13 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="hospital" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-9">
+        <TabsList className="grid w-full grid-cols-10">
           <TabsTrigger value="hospital">Hospital</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
+          <TabsTrigger value="vitals">Vitals</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
@@ -475,6 +477,10 @@ const Settings = () => {
 
         <TabsContent value="appointments">
           <AppointmentSettings />
+        </TabsContent>
+
+        <TabsContent value="vitals">
+          <VitalsSettingsManagement />
         </TabsContent>
 
         <TabsContent value="inventory" className="space-y-6">

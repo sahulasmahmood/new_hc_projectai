@@ -427,3 +427,18 @@ model BillItem {
   @@index([inventoryItemId])
   @@index([gstRateId])
 }
+
+model VitalsSettings {
+  id        Int      @id @default(autoincrement())
+  vitalType String   @unique // "bloodPressure", "heartRate", "temperature", "respiratoryRate", "oxygenSaturation", "weight", "height"
+  name      String // Display name
+  unit      String // Unit of measurement
+  minNormal Float? // Minimum normal value
+  maxNormal Float? // Maximum normal value
+  minCritical Float? // Minimum critical value (below this is critical)
+  maxCritical Float? // Maximum critical value (above this is critical)
+  isActive  Boolean  @default(true)
+  notes     String? // Additional notes or guidelines
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
