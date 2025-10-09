@@ -267,6 +267,78 @@ const getInventoryItemBatches = async (req, res) => {
   }
 };
 
+// GET inventory audit logs
+const getInventoryAuditLogs = async (req, res) => {
+  try {
+    const { inventoryItemId, action, limit = 50, offset = 0 } = req.query;
+    
+    let where = {};
+    if (inventoryItemId) {
+      where.inventoryItemId = parseInt(inventoryItemId);
+    }
+    if (action) {
+      where.action = action;
+    }
+
+    const auditLogs = await prisma.inventoryAudit.findMany({
+      where,
+      include: {
+        inventoryItem: {
+          select: {
+            name: true,
+            code: true,
+            unit: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit),
+      skip: parseInt(offset),
+    });
+
+    const totalCount = await prisma.inventoryAudit.count({ where });
+
+    res.json({
+      auditLogs,
+      total: totalCount,
+      page: Math.floor(parseInt(offset) / parseInt(limit)) + 1,
+      totalPages: Math.ceil(totalCount / parseInt(limit))
+    });
+  } catch (error) {
+    console.error('Error fetching inventory audit logs:', error);
+    res.status(500).json({ error: 'Failed to fetch audit logs' });
+  }
+};
+
+// GET inventory audit logs for specific item
+const getInventoryItemAuditLogs = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 20, offset = 0 } = req.query;
+
+    const auditLogs = await prisma.inventoryAudit.findMany({
+      where: { inventoryItemId: parseInt(id) },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit),
+      skip: parseInt(offset),
+    });
+
+    const totalCount = await prisma.inventoryAudit.count({
+      where: { inventoryItemId: parseInt(id) }
+    });
+
+    res.json({
+      auditLogs,
+      total: totalCount,
+      page: Math.floor(parseInt(offset) / parseInt(limit)) + 1,
+      totalPages: Math.ceil(totalCount / parseInt(limit))
+    });
+  } catch (error) {
+    console.error('Error fetching item audit logs:', error);
+    res.status(500).json({ error: 'Failed to fetch item audit logs' });
+  }
+};
+
 module.exports = {
   getAllInventoryItems,
   getInventoryItemById,
@@ -275,4 +347,6 @@ module.exports = {
   deleteInventoryItem,
   restockInventoryItem,
   getInventoryItemBatches,
+  getInventoryAuditLogs,
+  getInventoryItemAuditLogs,
 };

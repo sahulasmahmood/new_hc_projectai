@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Download, Eye, Calendar, User, Search, Filter, Receipt, IndianRupee, Loader2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -37,6 +38,7 @@ const Reports = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState("all");
   const [tab, setTab] = useState<'prescriptions'|'appointments'>("prescriptions");
+  const [isCustomRangeSelected, setIsCustomRangeSelected] = useState(false);
   
   // Billing related states
   const [billsMap, setBillsMap] = useState<Map<number, any>>(new Map());
@@ -47,6 +49,107 @@ const Reports = () => {
   
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Quick date selector functions
+  const setDateRangeQuick = (type: string) => {
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    
+    const last7Days = new Date(today)
+    last7Days.setDate(last7Days.getDate() - 7)
+    
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+    
+    const formatDate = (date: Date) => date.toISOString().split('T')[0]
+    
+    switch (type) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        })
+        break
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        })
+        break
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        })
+        break
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        })
+        break
+      case 'clear':
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        })
+        setIsCustomRangeSelected(false)
+        break
+      case 'custom':
+        // For custom, set flag to show custom inputs
+        setIsCustomRangeSelected(true)
+        break
+    }
+    
+    // Reset custom flag for non-custom selections
+    if (type !== 'custom') {
+      setIsCustomRangeSelected(false)
+    }
+    
+    setPage(1)
+  }
+
+  // Get current date range type for dropdown selection
+  const getCurrentDateRangeType = () => {
+    // If custom is explicitly selected, return custom
+    if (isCustomRangeSelected) {
+      return "custom"
+    }
+    
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "clear"
+    }
+    
+    const today = todayStr
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    
+    const last7Days = new Date()
+    last7Days.setDate(last7Days.getDate() - 7)
+    const last7DaysStr = last7Days.toISOString().split('T')[0]
+    
+    const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0]
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "today"
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "yesterday"
+    }
+    
+    if (dateRange.startDate === last7DaysStr && dateRange.endDate === today) {
+      return "last7days"
+    }
+    
+    if (dateRange.startDate === thisMonthStartStr && dateRange.endDate === today) {
+      return "thismonth"
+    }
+    
+    return "custom"
+  }
 
   useEffect(() => {
     fetchData();
@@ -294,70 +397,74 @@ const Reports = () => {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder={tab === 'prescriptions' ? "Search patient, doctor, complaint..." : "Search patient ID, status..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder={tab === 'prescriptions' ? "Search patient, doctor, complaint..." : "Search patient ID, status..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Select value={selectedPatient} onValueChange={setSelectedPatient}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by patient" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Patients</SelectItem>
+                    {(tab === 'prescriptions' ? patients : appointmentPatients).map((patient) => (
+                      <SelectItem key={patient} value={patient}>{patient}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-500" />
-              <Select value={selectedPatient} onValueChange={setSelectedPatient}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by patient" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Patients</SelectItem>
-                  {(tab === 'prescriptions' ? patients : appointmentPatients).map((patient) => (
-                    <SelectItem key={patient} value={patient}>{patient}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">From:</span>
-              <input
-                type="date"
-                value={dateRange.startDate}
-                onChange={e => { setDateRange({ ...dateRange, startDate: e.target.value }); setPage(1); }}
-                className="border rounded px-2 py-1"
-                max={new Date().toISOString().split('T')[0]}
-              />
-              <span className="text-sm text-gray-600">To:</span>
-              <input
-                type="date"
-                value={dateRange.endDate}
-                onChange={e => { setDateRange({ ...dateRange, endDate: e.target.value }); setPage(1); }}
-                className="border rounded px-2 py-1"
-                max={new Date().toISOString().split('T')[0]}
-              />
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  setDateRange({ startDate: today, endDate: today });
-                  setPage(1);
-                }}
-                className="text-xs"
-              >
-                Today
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  setDateRange({ startDate: "", endDate: "" });
-                  setPage(1);
-                }}
-                className="text-xs"
-              >
-                Clear
-              </Button>
+            
+            {/* Enhanced Date Range Filter - Same as Billing */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <Label className="text-sm font-medium">Date Range:</Label>
+                <Select 
+                  value={getCurrentDateRangeType()} 
+                  onValueChange={(value) => setDateRangeQuick(value)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">📅 Today</SelectItem>
+                    <SelectItem value="yesterday">📅 Yesterday</SelectItem>
+                    <SelectItem value="last7days">📅 Last 7 Days</SelectItem>
+                    <SelectItem value="thismonth">📅 This Month</SelectItem>
+                    <SelectItem value="clear">📅 All Time</SelectItem>
+                    <SelectItem value="custom">📅 Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Custom Date Range Inputs - Show inline when custom is selected */}
+                {isCustomRangeSelected && (
+                  <div className="flex items-center gap-2 ml-4">
+                    <Input
+                      type="date"
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                      className="w-36"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <Input
+                      type="date"
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                      className="w-36"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>

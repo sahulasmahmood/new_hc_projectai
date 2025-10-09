@@ -80,3 +80,14 @@ export const useUpcomingAppointments = (refreshKey: number = 0) => {
     refetchInterval: 2 * 60 * 1000, // 2 minutes
   });
 };
+
+export const useExpiredItemsAlerts = (refreshKey: number = 0) => {
+  return useQuery({
+    queryKey: ['expired-items-alerts', refreshKey],
+    queryFn: async () => {
+      const response = await api.get('/dashboard/expired-items-alerts');
+      return response.data;
+    },
+    staleTime: 15 * 60 * 1000, // 15 minutes
+  });
+};

@@ -84,6 +84,7 @@ const Emergency = () => {
   });
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  const [availableDoctors, setAvailableDoctors] = useState<Array<{id: number, name: string, qualification?: string}>>([]);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusCaseId, setStatusCaseId] = useState<number | null>(null);
   const [newStatus, setNewStatus] = useState("");
@@ -276,6 +277,17 @@ const Emergency = () => {
     fetchCases();
   }, [selectedStatus, selectedPriority, dateRange]);
 
+  // Fetch available doctors
+  const fetchAvailableDoctors = async () => {
+    try {
+      const response = await api.get('/doctors');
+      setAvailableDoctors(response.data);
+    } catch (error) {
+      console.error('Error fetching doctors:', error);
+      setAvailableDoctors([]);
+    }
+  };
+
   // Helper to handle form input changes
   const handleRegisterInput = (field: string, value: string) => {
     setRegisterForm((prev) => ({ ...prev, [field]: value }));
@@ -286,6 +298,11 @@ const Emergency = () => {
     // Frontend validation for required fields
     if (!registerForm.patientName || !registerForm.age || !registerForm.gender || !registerForm.phone) {
       setRegisterError('Please fill all required fields: Name, Age, Gender, and Phone.');
+      return;
+    }
+
+    if (!registerForm.assignedTo) {
+      setRegisterError('Please assign a doctor to this emergency case.');
       return;
     }
     // Numeric age validation
@@ -612,7 +629,12 @@ const Emergency = () => {
           <Siren className="h-8 w-8 text-red-500" />
           <h1 className="text-3xl font-bold text-gray-900">Emergency Department</h1>
         </div>
-        <Dialog open={registerDialogOpen} onOpenChange={setRegisterDialogOpen}>
+        <Dialog open={registerDialogOpen} onOpenChange={(open) => {
+          setRegisterDialogOpen(open);
+          if (open) {
+            fetchAvailableDoctors();
+          }
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-red-500 hover:bg-red-600">
               <Plus className="h-4 w-4 mr-2" />
@@ -657,19 +679,41 @@ const Emergency = () => {
                 <label className="text-sm font-medium">Chief Complaint <span className="text-red-500">*</span></label>
                 <Textarea placeholder="Describe the main symptoms or condition..." value={registerForm.chiefComplaint} onChange={e => handleRegisterInput('chiefComplaint', e.target.value)} />
               </div>
-              <div>
-                <label className="text-sm font-medium">Triage Priority <span className="text-red-500">*</span></label>
-                <Select value={registerForm.triagePriority} onValueChange={v => handleRegisterInput('triagePriority', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Critical">Critical (Red)</SelectItem>
-                    <SelectItem value="High">High (Orange)</SelectItem>
-                    <SelectItem value="Medium">Medium (Yellow)</SelectItem>
-                    <SelectItem value="Low">Low (Green)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Triage Priority <span className="text-red-500">*</span></label>
+                  <Select value={registerForm.triagePriority} onValueChange={v => handleRegisterInput('triagePriority', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Critical">Critical (Red)</SelectItem>
+                      <SelectItem value="High">High (Orange)</SelectItem>
+                      <SelectItem value="Medium">Medium (Yellow)</SelectItem>
+                      <SelectItem value="Low">Low (Green)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Assign Doctor <span className="text-red-500">*</span></label>
+                  <Select value={registerForm.assignedTo} onValueChange={v => handleRegisterInput('assignedTo', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Doctor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableDoctors.map((doctor) => (
+                        <SelectItem key={doctor.id} value={doctor.name}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{doctor.name}</span>
+                            {doctor.qualification && (
+                              <span className="text-xs text-gray-500">{doctor.qualification}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid grid-cols-4 gap-4">
                 <div>

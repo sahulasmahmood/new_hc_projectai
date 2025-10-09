@@ -31,6 +31,7 @@ interface PrescriptionViewModalProps {
       medicineName: string
       dosage: string
       frequency: string
+      timing?: string
       duration: string
     }>
     // Keep old patient relation for backward compatibility
@@ -49,6 +50,22 @@ interface PrescriptionViewModalProps {
   onClose: () => void
 }
 
+// Helper function to format timing display
+const formatTiming = (timing?: string) => {
+  if (!timing) return 'No meal restriction';
+  
+  const timingMap: Record<string, string> = {
+    'AC': 'Before meals (AC)',
+    'PC': 'After meals (PC)',
+    'HS': 'At bedtime (HS)',
+    'Empty stomach': 'Empty stomach',
+    'With food': 'With food',
+    'No meal restriction': 'No meal restriction'
+  };
+  
+  return timingMap[timing] || timing;
+};
+
 const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalProps) => {
   const [hospitalInfo, setHospitalInfo] = useState<{
     name?: string
@@ -59,6 +76,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
   const [loadingHospitalInfo, setLoadingHospitalInfo] = useState(true)
   const [isGeneratingBill, setIsGeneratingBill] = useState(false)
   const [existingBill, setExistingBill] = useState<{
+    id: number;
     billNumber: string;
     totalAmount: number;
     prescriptionId: number;
@@ -207,8 +225,8 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                 prescription.medications && prescription.medications.length > 0
                   ? `
                 <table class="medications-table">
-                  <thead><tr><th>Medicine Name</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead>
-                  <tbody>${(prescription.medications || []).map((med) => `<tr><td>${med.medicineName}</td><td>${med.dosage}</td><td>${med.frequency}</td><td>${med.duration}</td></tr>`).join("")}</tbody>
+                  <thead><tr><th>Medicine Name</th><th>Dosage</th><th>Frequency</th><th>Timing</th><th>Duration</th></tr></thead>
+                  <tbody>${(prescription.medications || []).map((med) => `<tr><td>${med.medicineName}</td><td>${med.dosage}</td><td>${med.frequency}</td><td>${formatTiming(med.timing)}</td><td>${med.duration}</td></tr>`).join("")}</tbody>
                 </table>`
                   : "<p>No medications prescribed</p>"
               }
@@ -440,6 +458,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-700">Medicine Name</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-700">Dosage</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-700">Frequency</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-700">Timing</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-700">Duration</th>
                             </tr>
                           </thead>
@@ -449,6 +468,7 @@ const PrescriptionViewModal = ({ prescription, onClose }: PrescriptionViewModalP
                                 <td className="px-2 py-1 text-sm">{med.medicineName}</td>
                                 <td className="px-2 py-1 text-sm">{med.dosage}</td>
                                 <td className="px-2 py-1 text-sm">{med.frequency}</td>
+                                <td className="px-2 py-1 text-sm">{formatTiming(med.timing)}</td>
                                 <td className="px-2 py-1 text-sm">{med.duration}</td>
                               </tr>
                             ))}

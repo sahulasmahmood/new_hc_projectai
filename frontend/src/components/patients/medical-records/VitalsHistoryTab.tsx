@@ -14,7 +14,8 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Activity
+  Activity,
+  Info
 } from "lucide-react";
 import api from "@/lib/api";
 import { useVitalsSettings } from "@/hooks/useVitalsSettings";
@@ -94,43 +95,67 @@ const VitalsHistoryTab = ({ patientId, patientName }: VitalsHistoryTabProps) => 
     return <Minus className="h-4 w-4 text-gray-400" />;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'normal':
-        return <Badge className="bg-green-100 text-green-800">Normal</Badge>;
-      case 'low':
-        return <Badge className="bg-blue-100 text-blue-800">Low</Badge>;
-      case 'high':
-        return <Badge className="bg-red-100 text-red-800">High</Badge>;
-      case 'critical':
-        return <Badge className="bg-red-600 text-white">Critical</Badge>;
-      default:
-        return null;
-    }
+  const getStatusBadgeWithTooltip = (status: string, vitalType: string, isBloodPressure = false) => {
+    const badgeStyles = {
+      normal: "bg-green-100 text-green-800 border-green-200",
+      low: "bg-blue-100 text-blue-800 border-blue-200", 
+      high: "bg-red-100 text-red-800 border-red-200",
+      critical: "bg-red-600 text-white border-red-600",
+      unknown: "bg-gray-100 text-gray-800 border-gray-200"
+    };
+    
+    const statusLabels = {
+      normal: "Normal",
+      low: "Low",
+      high: "High",
+      critical: "Critical", 
+      unknown: "Unknown"
+    };
+    
+    const rangeText = isBloodPressure ? getBloodPressureRangeText() : getNormalRangeText(vitalType as any);
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge className={`border cursor-help ${badgeStyles[status as keyof typeof badgeStyles]}`}>
+              {statusLabels[status as keyof typeof statusLabels]}
+              <Info className="h-3 w-3 ml-1" />
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="text-center">
+              <p className="font-medium">Normal Range</p>
+              <p className="text-sm">{rangeText}</p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
   };
 
   const getBPStatusBadge = (sys?: number, dia?: number) => {
     if (!sys || !dia) return null;
     const status = getBloodPressureStatus(sys, dia);
-    return getStatusBadge(status);
+    return getStatusBadgeWithTooltip(status, 'bloodPressure', true);
   };
 
   const getHeartRateStatusBadge = (hr?: number) => {
     if (!hr) return null;
     const status = getStatus(hr, 'heartRate');
-    return getStatusBadge(status);
+    return getStatusBadgeWithTooltip(status, 'heartRate');
   };
 
   const getTemperatureStatusBadge = (temp?: number) => {
     if (!temp) return null;
     const status = getStatus(temp, 'temperature');
-    return getStatusBadge(status);
+    return getStatusBadgeWithTooltip(status, 'temperature');
   };
 
   const getOxygenSaturationStatusBadge = (spo2?: number) => {
     if (!spo2) return null;
     const status = getStatus(spo2, 'oxygenSaturation');
-    return getStatusBadge(status);
+    return getStatusBadgeWithTooltip(status, 'oxygenSaturation');
   };
 
   const handlePrintVitals = () => {

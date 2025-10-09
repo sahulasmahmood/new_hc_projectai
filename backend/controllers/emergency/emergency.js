@@ -492,21 +492,45 @@ const registerEmergencyCase = async (req, res) => {
       slotDate = chosenSlot.slotStart;
       slotTime = chosenSlot.time;
 
-      // 2. Create appointment (double booking allowed for emergencies)
+      // 2. Find doctor information if assignedTo is provided
+      let doctorId = null;
+      let doctorName = null;
+      
+      if (emergencyCase.assignedTo && emergencyCase.assignedTo !== 'Unassigned') {
+        const assignedDoctor = await tx.staff.findFirst({
+          where: {
+            name: emergencyCase.assignedTo,
+            role: {
+              contains: 'Doctor',
+              mode: 'insensitive'
+            }
+          }
+        });
+        
+        if (assignedDoctor) {
+          doctorId = assignedDoctor.id;
+          doctorName = assignedDoctor.name;
+        }
+      }
+
+      // 3. Create appointment (double booking allowed for emergencies)
       const createdAppointment = await tx.appointment.create({
         data: {
           patientId: createdPatient.id,
           patientName: createdPatient.name,
           patientPhone: createdPatient.phone,
+          patientVisibleId: createdPatient.visibleId,
           date: slotDate,
           time: slotTime,
           type: appointment?.type || 'Emergency',
           duration: appointmentDuration, // Use dynamic duration
           status: appointment?.status || 'Confirmed',
           notes: appointment?.notes || `Auto-created for emergency (${emergencyCase.triagePriority})`,
+          doctorId: doctorId,
+          doctorName: doctorName,
         },
       });
-      // 3. Create emergency case
+      // 4. Create emergency case
       const createdCase = await tx.emergencyCase.create({
         data: {
           patientId: createdPatient.id,
@@ -521,7 +545,7 @@ const registerEmergencyCase = async (req, res) => {
         include: { patient: true, appointment: true },
       });
 
-      // 4. Update appointment to reference emergency case
+      // 5. Update appointment to reference emergency case
       await tx.appointment.update({
         where: { id: createdAppointment.id },
         data: { emergencyCaseId: createdCase.id },

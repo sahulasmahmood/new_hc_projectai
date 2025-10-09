@@ -161,6 +161,27 @@ model InventoryItem {
   updatedAt     DateTime         @updatedAt
   batches       InventoryBatch[]
   billItems     BillItem[] // Relation to bill items
+  auditLogs     InventoryAudit[] // Relation to audit logs
+}
+
+model InventoryAudit {
+  id              Int           @id @default(autoincrement())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId Int
+  action          String        // "STOCK_IN", "STOCK_OUT", "ADJUSTMENT", "BILLING", "EXPIRED", "DAMAGED"
+  quantityBefore  Int           // Stock before the action
+  quantityAfter   Int           // Stock after the action
+  quantityChanged Int           // Positive for stock in, negative for stock out
+  reason          String?       // Reason for the change
+  reference       String?       // Reference to bill, batch, etc.
+  referenceId     Int?          // ID of the reference (billId, batchId, etc.)
+  performedBy     String?       // User who performed the action
+  notes           String?       // Additional notes
+  createdAt       DateTime      @default(now())
+
+  @@index([inventoryItemId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model InventoryCategory {
@@ -346,6 +367,7 @@ model PrescriptionMedication {
   medicineName   String
   dosage         String
   frequency      String
+  timing         String       @default("No meal restriction")
   duration       String
   createdAt      DateTime     @default(now())
 

@@ -8,6 +8,7 @@ const {
   getTopMedicines,
   getRecentActivities,
   getLowStockAlerts,
+  getExpiredItemsAlerts,
   getUpcomingAppointments
 } = require('../controllers/dashboard');
 
@@ -23,6 +24,7 @@ router.get('/top-medicines', getTopMedicines);
 // Recent activities and alerts
 router.get('/recent-activities', getRecentActivities);
 router.get('/low-stock-alerts', getLowStockAlerts);
+router.get('/expired-items-alerts', getExpiredItemsAlerts);
 router.get('/upcoming-appointments', getUpcomingAppointments);
 
 module.exports = router;

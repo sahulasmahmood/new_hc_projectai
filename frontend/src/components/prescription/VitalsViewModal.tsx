@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Heart, X, Activity, Thermometer, Droplets, Clock } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Heart, X, Activity, Thermometer, Droplets, Clock, Info } from "lucide-react";
 import api from "@/lib/api";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 interface VitalRecord {
   id: number;
@@ -34,6 +36,7 @@ interface VitalsViewModalProps {
 const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentId }: VitalsViewModalProps) => {
   const [vitals, setVitals] = useState<VitalRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const { getBloodPressureStatus, getStatus, getNormalRangeText, getBloodPressureRangeText } = useVitalsSettings();
 
   useEffect(() => {
     if (isOpen) {
@@ -64,50 +67,81 @@ const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentI
     return "N/A";
   };
 
-  const getVitalStatus = (vital: string, value?: number) => {
-    if (!value) return "text-gray-500";
-    
-    switch (vital) {
-      case "heartRate":
-        if (value < 60 || value > 100) return "text-red-600";
+  const getVitalStatusColor = (status: string) => {
+    switch (status) {
+      case 'normal':
         return "text-green-600";
-      case "temperature":
-        if (value < 97 || value > 99.5) return "text-red-600";
-        return "text-green-600";
-      case "oxygenSaturation":
-        if (value < 95) return "text-red-600";
-        return "text-green-600";
-      case "bloodPressure":
-        if (value > 140 || value < 90) return "text-red-600";
-        return "text-green-600";
+      case 'low':
+        return "text-blue-600";
+      case 'high':
+        return "text-red-600";
+      case 'critical':
+        return "text-red-800";
       default:
-        return "text-gray-700";
+        return "text-gray-500";
     }
   };
 
-  const getStatusBadge = (vital: string, value?: number) => {
-    if (!value) return null;
+  const getStatusBadgeWithRange = (vitalType: string, value?: number, sys?: number, dia?: number) => {
+    if (!value && !sys) return null;
     
-    const isAbnormal = getVitalStatus(vital, value) === "text-red-600";
-    if (isAbnormal) {
-      return <Badge variant="destructive" className="text-xs ml-2">Abnormal</Badge>;
+    let status: string;
+    let rangeText: string;
+    
+    if (vitalType === 'bloodPressure' && sys && dia) {
+      status = getBloodPressureStatus(sys, dia);
+      rangeText = getBloodPressureRangeText();
+    } else if (value) {
+      status = getStatus(value, vitalType as any);
+      rangeText = getNormalRangeText(vitalType as any);
+    } else {
+      return null;
     }
-    return <Badge variant="secondary" className="text-xs ml-2 bg-green-100 text-green-800">Normal</Badge>;
+    
+    const badgeStyles = {
+      normal: "bg-green-100 text-green-800 border-green-200",
+      low: "bg-blue-100 text-blue-800 border-blue-200",
+      high: "bg-red-100 text-red-800 border-red-200",
+      critical: "bg-red-600 text-white border-red-600",
+      unknown: "bg-gray-100 text-gray-800 border-gray-200"
+    };
+    
+    const statusLabels = {
+      normal: "Normal",
+      low: "Low",
+      high: "High", 
+      critical: "Critical",
+      unknown: "Unknown"
+    };
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge className={`text-xs ml-2 border ${badgeStyles[status as keyof typeof badgeStyles]} cursor-help`}>
+              {statusLabels[status as keyof typeof statusLabels]}
+              <Info className="h-3 w-3 ml-1" />
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="text-center">
+              <p className="font-medium">Normal Range</p>
+              <p className="text-sm">{rangeText}</p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <Heart className="h-5 w-5 text-red-500" />
-              Patient Vitals - {patientName}
-            </DialogTitle>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+          <DialogTitle className="flex items-center gap-2">
+            <Heart className="h-5 w-5 text-red-500" />
+            Patient Vitals - {patientName}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -145,9 +179,9 @@ const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentI
                       <div className="flex items-center gap-1">
                         <Activity className="h-4 w-4 text-red-500" />
                         <span className="text-sm font-medium text-gray-700">Blood Pressure</span>
-                        {getStatusBadge("bloodPressure", vital.bloodPressureSys)}
+                        {getStatusBadgeWithRange("bloodPressure", undefined, vital.bloodPressureSys, vital.bloodPressureDia)}
                       </div>
-                      <div className={`text-lg font-semibold ${getVitalStatus("bloodPressure", vital.bloodPressureSys)}`}>
+                      <div className={`text-lg font-semibold ${vital.bloodPressureSys && vital.bloodPressureDia ? getVitalStatusColor(getBloodPressureStatus(vital.bloodPressureSys, vital.bloodPressureDia)) : 'text-gray-500'}`}>
                         {formatBloodPressure(vital.bloodPressureSys, vital.bloodPressureDia)}
                       </div>
                     </div>
@@ -157,9 +191,9 @@ const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentI
                       <div className="flex items-center gap-1">
                         <Heart className="h-4 w-4 text-pink-500" />
                         <span className="text-sm font-medium text-gray-700">Heart Rate</span>
-                        {getStatusBadge("heartRate", vital.heartRate)}
+                        {getStatusBadgeWithRange("heartRate", vital.heartRate)}
                       </div>
-                      <div className={`text-lg font-semibold ${getVitalStatus("heartRate", vital.heartRate)}`}>
+                      <div className={`text-lg font-semibold ${vital.heartRate ? getVitalStatusColor(getStatus(vital.heartRate, 'heartRate')) : 'text-gray-500'}`}>
                         {formatVitalValue(vital.heartRate, " bpm")}
                       </div>
                     </div>
@@ -169,9 +203,9 @@ const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentI
                       <div className="flex items-center gap-1">
                         <Thermometer className="h-4 w-4 text-orange-500" />
                         <span className="text-sm font-medium text-gray-700">Temperature</span>
-                        {getStatusBadge("temperature", vital.temperature)}
+                        {getStatusBadgeWithRange("temperature", vital.temperature)}
                       </div>
-                      <div className={`text-lg font-semibold ${getVitalStatus("temperature", vital.temperature)}`}>
+                      <div className={`text-lg font-semibold ${vital.temperature ? getVitalStatusColor(getStatus(vital.temperature, 'temperature')) : 'text-gray-500'}`}>
                         {formatVitalValue(vital.temperature, "°F")}
                       </div>
                     </div>
@@ -181,9 +215,9 @@ const VitalsViewModal = ({ isOpen, onClose, patientId, patientName, appointmentI
                       <div className="flex items-center gap-1">
                         <Droplets className="h-4 w-4 text-blue-500" />
                         <span className="text-sm font-medium text-gray-700">O2 Saturation</span>
-                        {getStatusBadge("oxygenSaturation", vital.oxygenSaturation)}
+                        {getStatusBadgeWithRange("oxygenSaturation", vital.oxygenSaturation)}
                       </div>
-                      <div className={`text-lg font-semibold ${getVitalStatus("oxygenSaturation", vital.oxygenSaturation)}`}>
+                      <div className={`text-lg font-semibold ${vital.oxygenSaturation ? getVitalStatusColor(getStatus(vital.oxygenSaturation, 'oxygenSaturation')) : 'text-gray-500'}`}>
                         {formatVitalValue(vital.oxygenSaturation, "%")}
                       </div>
                     </div>

@@ -24,14 +24,77 @@ const generateBillNumber = async () => {
   return `${prefix}${String(nextNumber).padStart(4, "0")}`
 }
 
+// Helper function to format timing display with full descriptions
+const formatTimingForBill = (timing) => {
+  if (!timing || timing === 'No meal restriction') {
+    return 'No meal restriction'
+  }
+  
+  const timingMap = {
+    'AC': 'Before meals (AC)',
+    'PC': 'After meals (PC)', 
+    'HS': 'At bedtime (HS)',
+    'Empty stomach': 'Empty stomach',
+    'With food': 'With food',
+    'Before meals': 'Before meals',
+    'After meals': 'After meals',
+    'At bedtime': 'At bedtime'
+  }
+  
+  return timingMap[timing] || timing
+}
+
+// Helper function to create inventory audit log
+const createInventoryAudit = async (inventoryItemId, action, quantityBefore, quantityAfter, reason, reference = null, referenceId = null, performedBy = null, notes = null) => {
+  try {
+    const quantityChanged = quantityAfter - quantityBefore
+    
+    await prisma.inventoryAudit.create({
+      data: {
+        inventoryItemId,
+        action,
+        quantityBefore,
+        quantityAfter,
+        quantityChanged,
+        reason,
+        reference,
+        referenceId,
+        performedBy,
+        notes,
+      }
+    })
+  } catch (error) {
+    console.error('Error creating inventory audit log:', error)
+    // Don't throw error to avoid breaking the main operation
+  }
+}
+
 // Helper function to calculate medicine quantity from frequency and duration
 const calculateMedicineQuantity = (frequency, duration) => {
   try {
-    // Parse frequency (e.g., "2 times a day", "3x daily", "Once daily", "BID", "TID", "QID")
     let timesPerDay = 1
-    const freqLower = frequency.toLowerCase()
+    const freqLower = frequency.toLowerCase().trim()
     
-    if (freqLower.includes('bid') || freqLower.includes('twice') || freqLower.includes('2 times') || freqLower.includes('2x')) {
+    // Handle special cases for "As directed", "As needed", "As prescribed", "PRN", "SOS"
+    if (freqLower.includes('as directed') || freqLower.includes('as needed') || 
+        freqLower.includes('as prescribed') || freqLower.includes('prn') || 
+        freqLower.includes('sos') || freqLower.includes('if required')) {
+      // For "As directed" cases, DO NOT set a default quantity
+      // This is medically inappropriate and can lead to over/under-prescribing
+      // Return 0 to indicate manual quantity entry is required
+      return 0
+    }
+    
+    // Handle dosage format like "1-0-1", "1-1-1", "0-0-1", etc.
+    const dosageMatch = freqLower.match(/(\d+)-(\d+)-(\d+)/)
+    if (dosageMatch) {
+      const morning = parseInt(dosageMatch[1])
+      const afternoon = parseInt(dosageMatch[2])
+      const evening = parseInt(dosageMatch[3])
+      timesPerDay = morning + afternoon + evening
+    }
+    // Handle standard frequency descriptions
+    else if (freqLower.includes('bid') || freqLower.includes('twice') || freqLower.includes('2 times') || freqLower.includes('2x')) {
       timesPerDay = 2
     } else if (freqLower.includes('tid') || freqLower.includes('thrice') || freqLower.includes('3 times') || freqLower.includes('3x')) {
       timesPerDay = 3
@@ -166,6 +229,22 @@ const createBillFromPrescription = async (req, res) => {
         })
 
         if (inventoryMedicine) {
+          // Check if medicine is expired
+          let isExpired = false
+          if (inventoryMedicine.expiryDate) {
+            const expiryDate = new Date(inventoryMedicine.expiryDate)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            expiryDate.setHours(0, 0, 0, 0)
+            isExpired = expiryDate < today
+          }
+          
+          // Skip expired medicines - don't add to bill
+          if (isExpired) {
+            console.warn(`Skipping expired medicine: ${medication.medicineName} (Expired: ${inventoryMedicine.expiryDate})`)
+            continue
+          }
+          
           // Calculate quantity based on frequency and duration
           const calculatedQuantity = calculateMedicineQuantity(medication.frequency, medication.duration)
           
@@ -178,7 +257,7 @@ const createBillFromPrescription = async (req, res) => {
               billId: bill.id,
               itemType: "medicine",
               itemName: medication.medicineName,
-              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} for ${medication.duration}${batchInfo}`,
+              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} • ${formatTimingForBill(medication.timing)} • ${medication.duration}${batchInfo}`,
               quantity: calculatedQuantity,
               unitPrice: inventoryMedicine.pricePerUnit,
               totalPrice: calculatedQuantity * inventoryMedicine.pricePerUnit,
@@ -196,7 +275,7 @@ const createBillFromPrescription = async (req, res) => {
               billId: bill.id,
               itemType: "medicine",
               itemName: medication.medicineName,
-              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} for ${medication.duration} (Not in inventory)`,
+              description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} • ${formatTimingForBill(medication.timing)} • ${medication.duration} (Not in inventory)`,
               quantity: calculatedQuantity,
               unitPrice: 0, // Will need manual pricing
               totalPrice: 0,
@@ -242,12 +321,14 @@ const createBillFromPrescription = async (req, res) => {
         prescription: {
           select: {
             doctorName: true,
+            investigations: true,
             medications: {
               select: {
                 id: true,
                 medicineName: true,
                 dosage: true,
                 frequency: true,
+                timing: true,
                 duration: true,
               },
             },
@@ -279,6 +360,11 @@ const addMedicineItem = async (req, res) => {
       return res.status(400).json({ error: "Medicine name, quantity, and unit price are required" })
     }
 
+    // Validate unit price is not zero
+    if (Number.parseFloat(unitPrice) <= 0) {
+      return res.status(400).json({ error: "Unit price must be greater than zero for billing" })
+    }
+
     const bill = await prisma.bill.findUnique({
       where: { id: Number.parseInt(billId) },
       include: { items: true },
@@ -290,6 +376,26 @@ const addMedicineItem = async (req, res) => {
 
     if (bill.status === "Paid") {
       return res.status(400).json({ error: "Cannot modify paid bill" })
+    }
+
+    // Check if inventory item is expired
+    if (inventoryItemId) {
+      const inventoryItem = await prisma.inventoryItem.findUnique({
+        where: { id: Number.parseInt(inventoryItemId) }
+      })
+      
+      if (inventoryItem && inventoryItem.expiryDate) {
+        const expiryDate = new Date(inventoryItem.expiryDate)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        expiryDate.setHours(0, 0, 0, 0)
+        
+        if (expiryDate < today) {
+          return res.status(400).json({ 
+            error: `Cannot add expired medicine to bill. ${medicineName} expired on ${expiryDate.toLocaleDateString()}` 
+          })
+        }
+      }
     }
 
     const totalPrice = Number.parseFloat(quantity) * Number.parseFloat(unitPrice)
@@ -470,12 +576,14 @@ const getBill = async (req, res) => {
           select: {
             doctorName: true,
             createdAt: true,
+            investigations: true,
             medications: {
               select: {
                 id: true,
                 medicineName: true,
                 dosage: true,
                 frequency: true,
+                timing: true,
                 duration: true,
               },
             },
@@ -613,23 +721,74 @@ const updatePaymentStatus = async (req, res) => {
       }
     })
 
+    // Validate zero-cost and zero-quantity items before marking as paid
+    if (status === "Paid") {
+      const zeroCostItems = currentBill.items.filter(item => item.unitPrice <= 0)
+      const zeroQuantityItems = currentBill.items.filter(item => item.quantity <= 0)
+      
+      if (zeroCostItems.length > 0) {
+        const itemNames = zeroCostItems.map(item => item.itemName).join(', ')
+        return res.status(400).json({ 
+          error: `Cannot mark bill as paid. The following items have zero or invalid pricing: ${itemNames}. Please update prices before payment.` 
+        })
+      }
+      
+      if (zeroQuantityItems.length > 0) {
+        const itemNames = zeroQuantityItems.map(item => item.itemName).join(', ')
+        return res.status(400).json({ 
+          error: `Cannot mark bill as paid. The following items have zero quantity: ${itemNames}. Please update quantities before payment. Note: "As directed", "As needed", and "As prescribed" medicines require manual quantity entry.` 
+        })
+      }
+      
+      // Also check if total amount is zero
+      if (currentBill.totalAmount <= 0) {
+        return res.status(400).json({ 
+          error: "Cannot mark bill as paid with zero total amount. Please add items or update pricing." 
+        })
+      }
+    }
+
     if (status === "Paid" && currentBill.status !== "Paid") {
       updateData.paymentDate = new Date()
       if (paymentMethod) {
         updateData.paymentMethod = paymentMethod
       }
 
-      // Reduce inventory for medicine items
+      // Reduce inventory for medicine items with audit logging
       for (const item of currentBill.items) {
         if (item.itemType === "medicine" && item.inventoryItemId) {
-          await prisma.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: {
-              currentStock: {
-                decrement: item.quantity
-              }
-            }
+          // Get current stock before update
+          const inventoryItem = await prisma.inventoryItem.findUnique({
+            where: { id: item.inventoryItemId }
           })
+          
+          if (inventoryItem) {
+            const quantityBefore = inventoryItem.currentStock
+            const quantityAfter = quantityBefore - item.quantity
+            
+            // Update inventory
+            await prisma.inventoryItem.update({
+              where: { id: item.inventoryItemId },
+              data: {
+                currentStock: {
+                  decrement: item.quantity
+                }
+              }
+            })
+            
+            // Create audit log
+            await createInventoryAudit(
+              item.inventoryItemId,
+              'BILLING',
+              quantityBefore,
+              quantityAfter,
+              `Stock reduced due to billing - Bill #${currentBill.billNumber}`,
+              'BILL',
+              currentBill.id,
+              'System', // Could be replaced with actual user info if available
+              `Medicine: ${item.itemName}, Quantity: ${item.quantity}, Patient: ${currentBill.patient?.name || 'Unknown'}`
+            )
+          }
         }
       }
     } else if (status === "Paid") {
@@ -1004,12 +1163,14 @@ const getBillInvoice = async (req, res) => {
           select: {
             doctorName: true,
             createdAt: true,
+            investigations: true,
             medications: {
               select: {
                 id: true,
                 medicineName: true,
                 dosage: true,
                 frequency: true,
+                timing: true,
                 duration: true,
               },
             },

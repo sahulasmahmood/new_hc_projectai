@@ -11,6 +11,9 @@ interface StockItem {
   unit: string;
   category?: string;
   supplier?: string;
+  expiryDate?: string;
+  isExpired?: boolean;
+  isExpiringSoon?: boolean;
 }
 
 interface Appointment {
@@ -26,7 +29,7 @@ interface Appointment {
 }
 
 interface AlertsPanelProps {
-  type: 'stock' | 'appointments';
+  type: 'stock' | 'appointments' | 'expired';
   title: string;
   items: StockItem[] | Appointment[];
   isLoading?: boolean;
@@ -50,11 +53,18 @@ export const AlertsPanel = ({ type, title, items, isLoading }: AlertsPanelProps)
           <p className="text-center">
             {type === 'stock' 
               ? '✅ All inventory items are well stocked!' 
+              : type === 'expired'
+              ? '✅ No expired items found!'
               : 'No upcoming appointments'}
           </p>
           {type === 'stock' && (
             <p className="text-xs text-center mt-2 text-gray-400">
               All items are above their minimum stock levels
+            </p>
+          )}
+          {type === 'expired' && (
+            <p className="text-xs text-center mt-2 text-gray-400">
+              All medicines are within their expiry dates
             </p>
           )}
         </div>
@@ -66,18 +76,24 @@ export const AlertsPanel = ({ type, title, items, isLoading }: AlertsPanelProps)
     <ScrollArea className="h-[250px]">
       <div className="space-y-3">
         {items.map((item, index) => {
-          if (type === 'stock') {
+          if (type === 'stock' || type === 'expired') {
             const stockItem = item as StockItem;
             const stockPercentage = stockItem.minStock > 0 ? (stockItem.currentStock / stockItem.minStock) * 100 : 0;
             const isCritical = stockItem.currentStock === 0;
             const isVeryLow = stockItem.currentStock <= stockItem.minStock * 0.5;
+            const isExpired = stockItem.isExpired;
+            const isExpiringSoon = stockItem.isExpiringSoon;
             
             return (
               <div key={index} className={`flex items-center justify-between p-3 rounded-lg border ${
-                isCritical 
+                isExpired
+                  ? 'bg-red-100 border-red-300'
+                  : isCritical 
                   ? 'bg-red-100 border-red-300' 
                   : isVeryLow 
                   ? 'bg-red-50 border-red-200' 
+                  : isExpiringSoon
+                  ? 'bg-yellow-50 border-yellow-200'
                   : 'bg-yellow-50 border-yellow-200'
               }`}>
                 <div className="flex-1">
@@ -94,16 +110,37 @@ export const AlertsPanel = ({ type, title, items, isLoading }: AlertsPanelProps)
                   {stockItem.supplier && (
                     <p className="text-xs text-gray-500 mt-1">Supplier: {stockItem.supplier}</p>
                   )}
+                  {stockItem.expiryDate && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Exp: {new Date(stockItem.expiryDate).toLocaleDateString()}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
-                  <Badge variant={isCritical ? "destructive" : isVeryLow ? "destructive" : "secondary"}>
-                    {stockItem.currentStock} {stockItem.unit}
-                  </Badge>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Min: {stockItem.minStock} {stockItem.unit}
-                  </p>
-                  {isCritical && (
-                    <p className="text-xs text-red-600 font-medium mt-1">OUT OF STOCK</p>
+                  {type === 'expired' ? (
+                    <>
+                      <Badge variant={isExpired ? "destructive" : "secondary"} className={isExpired ? "bg-red-600 text-white" : ""}>
+                        {isExpired ? "EXPIRED" : "EXP SOON"}
+                      </Badge>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {stockItem.currentStock} {stockItem.unit}
+                      </p>
+                      {isExpired && (
+                        <p className="text-xs text-red-600 font-medium mt-1">DO NOT USE</p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Badge variant={isCritical ? "destructive" : isVeryLow ? "destructive" : "secondary"}>
+                        {stockItem.currentStock} {stockItem.unit}
+                      </Badge>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Min: {stockItem.minStock} {stockItem.unit}
+                      </p>
+                      {isCritical && (
+                        <p className="text-xs text-red-600 font-medium mt-1">OUT OF STOCK</p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

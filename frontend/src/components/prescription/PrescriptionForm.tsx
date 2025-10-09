@@ -15,6 +15,7 @@ interface Medication {
   name: string;
   dosage: string;
   frequency: string;
+  timing: string;
   duration: string;
 }
 
@@ -31,6 +32,7 @@ interface EditingMedication {
   name: string;
   dosage: string;
   frequency: string;
+  timing: string;
   duration: string;
 }
 
@@ -125,6 +127,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
     name: "",
     dosage: "",
     frequency: "",
+    timing: "",
     duration: ""
   });
 
@@ -183,11 +186,12 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
       name: newMedication.name,
       dosage: newMedication.dosage || "As directed",
       frequency: newMedication.frequency || "As needed",
+      timing: newMedication.timing || "No meal restriction",
       duration: newMedication.duration || "As prescribed"
     };
 
     setMedications([...medications, medication]);
-    setNewMedication({ name: "", dosage: "", frequency: "", duration: "" });
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
   };
 
   const removeMedication = (id: string) => {
@@ -200,6 +204,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
       name: medication.name,
       dosage: medication.dosage,
       frequency: medication.frequency,
+      timing: medication.timing,
       duration: medication.duration
     });
   };
@@ -214,18 +219,19 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
             name: newMedication.name,
             dosage: newMedication.dosage || "As directed",
             frequency: newMedication.frequency || "As needed",
+            timing: newMedication.timing || "No meal restriction",
             duration: newMedication.duration || "As prescribed"
           }
         : med
     ));
 
     setEditingMedication(null);
-    setNewMedication({ name: "", dosage: "", frequency: "", duration: "" });
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
   };
 
   const cancelEdit = () => {
     setEditingMedication(null);
-    setNewMedication({ name: "", dosage: "", frequency: "", duration: "" });
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
   };
 
   const handleSave = async () => {
@@ -235,6 +241,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
     const hasUnsavedMedicine = newMedication.name.trim() || 
                               newMedication.dosage.trim() || 
                               newMedication.frequency.trim() || 
+                              newMedication.timing.trim() || 
                               newMedication.duration.trim();
     
     if (hasUnsavedMedicine) {
@@ -281,6 +288,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
       setInvestigations("");
       setDoctorNotes("");
       setAdvice("");
+      setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
       clearSavedState();
       localStorage.removeItem('prescription_unsaved');
     } catch (error) {
@@ -394,6 +402,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                       name: item.name,
                       dosage: "",
                       frequency: "",
+                      timing: "",
                       duration: ""
                     });
                   }}
@@ -406,7 +415,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                 <div className="text-xs font-medium text-gray-700 mb-2">
                   {editingMedication ? '✏️ Editing Medicine' : '📝 Enter Medicine Details'}
                 </div>
-                <div className={`grid grid-cols-1 md:grid-cols-5 gap-2 p-3 border rounded ${
+                <div className={`grid grid-cols-1 md:grid-cols-6 gap-2 p-3 border rounded ${
                   editingMedication ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
                 }`}>
                   <Input
@@ -422,7 +431,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                     className="text-sm"
                   />
                   
-                  {/* Frequency Dropdown for speed and accuracy */}
+                  {/* Frequency Dropdown - Only timing patterns */}
                   <Select 
                     value={newMedication.frequency} 
                     onValueChange={(value) => setNewMedication({...newMedication, frequency: value})}
@@ -431,19 +440,46 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                       <SelectValue placeholder="Frequency" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Once daily">Once daily</SelectItem>
-                      <SelectItem value="Twice daily">Twice daily</SelectItem>
-                      <SelectItem value="Three times daily">Three times daily</SelectItem>
-                      <SelectItem value="Four times daily">Four times daily</SelectItem>
-                      <SelectItem value="Every 4 hours">Every 4 hours</SelectItem>
-                      <SelectItem value="Every 6 hours">Every 6 hours</SelectItem>
-                      <SelectItem value="Every 8 hours">Every 8 hours</SelectItem>
-                      <SelectItem value="Every 12 hours">Every 12 hours</SelectItem>
-                      <SelectItem value="Before meals">Before meals</SelectItem>
-                      <SelectItem value="After meals">After meals</SelectItem>
-                      <SelectItem value="At bedtime">At bedtime</SelectItem>
-                      <SelectItem value="As needed">As needed</SelectItem>
-                    {/*   <SelectItem value="When required">When required</SelectItem> */}
+                      {/* Standard Medical Frequency Format (Morning-Noon-Night) */}
+                      <SelectItem value="1-0-0">1-0-0 (Once daily - Morning)</SelectItem>
+                      <SelectItem value="0-0-1">0-0-1 (Once daily - Night)</SelectItem>
+                      <SelectItem value="1-0-1">1-0-1 (Twice daily - Morning & Night)</SelectItem>
+                      <SelectItem value="1-1-0">1-1-0 (Twice daily - Morning & Noon)</SelectItem>
+                      <SelectItem value="0-1-1">0-1-1 (Twice daily - Noon & Night)</SelectItem>
+                      <SelectItem value="1-1-1">1-1-1 (Three times daily)</SelectItem>
+                      <SelectItem value="2-0-0">2-0-0 (Two tablets - Morning)</SelectItem>
+                      <SelectItem value="0-0-2">0-0-2 (Two tablets - Night)</SelectItem>
+                      <SelectItem value="2-0-2">2-0-2 (Four times daily - 2 Morning & 2 Night)</SelectItem>
+                      <SelectItem value="1-1-1-1">1-1-1-1 (Four times daily)</SelectItem>
+                      
+                      {/* Time-based alternatives */}
+                      <SelectItem value="Q4H">Q4H (Every 4 hours)</SelectItem>
+                      <SelectItem value="Q6H">Q6H (Every 6 hours)</SelectItem>
+                      <SelectItem value="Q8H">Q8H (Every 8 hours)</SelectItem>
+                      <SelectItem value="Q12H">Q12H (Every 12 hours)</SelectItem>
+                      
+                      {/* Special cases */}
+                      <SelectItem value="PRN">PRN (As needed)</SelectItem>
+                      <SelectItem value="STAT">STAT (Immediately)</SelectItem>
+                      <SelectItem value="SOS">SOS (If required)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Separate Timing Dropdown - Meal relationships */}
+                  <Select 
+                    value={newMedication.timing} 
+                    onValueChange={(value) => setNewMedication({...newMedication, timing: value})}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Timing" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AC">AC (Before meals)</SelectItem>
+                      <SelectItem value="PC">PC (After meals)</SelectItem>
+                      <SelectItem value="HS">HS (At bedtime)</SelectItem>
+                      <SelectItem value="Empty stomach">Empty stomach</SelectItem>
+                      <SelectItem value="With food">With food</SelectItem>
+                      <SelectItem value="No meal restriction">No meal restriction</SelectItem>
                     </SelectContent>
                   </Select>
                   
@@ -503,7 +539,9 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                   </div>
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  💡 Search to find any item from inventory, then quickly select frequency and duration from dropdowns for speed and accuracy
+                  💡 <strong>Correct Healthcare Format:</strong> Frequency (how often) + Timing (meal relationship)
+                  <br />
+                  📋 <strong>Example:</strong> 1-0-1 (frequency) + AC (before meals) = Take 1 tablet morning & night before meals
                 </div>
               </div>
             </div>
@@ -516,6 +554,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Medicine Name</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Dosage</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Frequency</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Timing</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Duration</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Action</th>
                   </tr>
@@ -526,6 +565,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                       <td className="px-3 py-2 text-sm">{med.name}</td>
                       <td className="px-3 py-2 text-sm">{med.dosage}</td>
                       <td className="px-3 py-2 text-sm">{med.frequency}</td>
+                      <td className="px-3 py-2 text-sm">{med.timing}</td>
                       <td className="px-3 py-2 text-sm">{med.duration}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
@@ -553,7 +593,7 @@ const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFor
                   ))}
                   {medications.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-4 text-center text-gray-500 text-sm">
+                      <td colSpan={6} className="px-3 py-4 text-center text-gray-500 text-sm">
                         No medications added yet. Use the form above to add medicines.
                       </td>
                     </tr>

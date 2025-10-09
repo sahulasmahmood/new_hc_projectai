@@ -13,6 +13,22 @@ try {
   console.warn('External font loading failed, using system fonts');
 }
 
+// Helper function to format timing display
+const formatTiming = (timing?: string) => {
+  if (!timing) return 'No meal restriction';
+  
+  const timingMap: Record<string, string> = {
+    'AC': 'Before meals (AC)',
+    'PC': 'After meals (PC)',
+    'HS': 'At bedtime (HS)',
+    'Empty stomach': 'Empty stomach',
+    'With food': 'With food',
+    'No meal restriction': 'No meal restriction'
+  };
+  
+  return timingMap[timing] || timing;
+};
+
 interface Prescription {
   id: number;
   date: string;
@@ -27,6 +43,7 @@ interface Prescription {
     medicineName: string;
     dosage: string;
     frequency: string;
+    timing?: string;
     duration: string;
   }>;
   investigations?: string;
@@ -114,7 +131,6 @@ const styles = StyleSheet.create({
   patientLabel: {
     fontWeight: 'bold',
     width: 60,
-    display: 'inline-block',
   },
   dateInfo: {
     textAlign: 'right',
@@ -177,7 +193,6 @@ const styles = StyleSheet.create({
     padding: 6,
     borderWidth: 1,
     borderColor: '#000',
-    verticalAlign: 'top',
   },
   tableRow: {
     flexDirection: 'row',
@@ -312,20 +327,22 @@ const PrescriptionPDF: React.FC<PrescriptionPDFProps> = ({
           <View style={styles.medicationsTable}>
             {/* Table Header */}
             <View style={styles.tableRow}>
-              <Text style={[styles.tableHeader, { width: '8%' }]}>S.No</Text>
-              <Text style={[styles.tableHeader, { width: '35%' }]}>Medicine Name</Text>
-              <Text style={[styles.tableHeader, { width: '19%' }]}>Dosage</Text>
-              <Text style={[styles.tableHeader, { width: '19%' }]}>Frequency</Text>
-              <Text style={[styles.tableHeader, { width: '19%' }]}>Duration</Text>
+              <Text style={[styles.tableHeader, { width: '6%' }]}>S.No</Text>
+              <Text style={[styles.tableHeader, { width: '30%' }]}>Medicine Name</Text>
+              <Text style={[styles.tableHeader, { width: '16%' }]}>Dosage</Text>
+              <Text style={[styles.tableHeader, { width: '16%' }]}>Frequency</Text>
+              <Text style={[styles.tableHeader, { width: '16%' }]}>Timing</Text>
+              <Text style={[styles.tableHeader, { width: '16%' }]}>Duration</Text>
             </View>
             {/* Table Body */}
             {prescription.medications.map((med, index) => (
               <View key={med.id} style={styles.tableRow}>
-                <Text style={[styles.tableCell, { width: '8%' }]}>{index + 1}</Text>
-                <Text style={[styles.tableCell, { width: '35%', fontWeight: 'bold' }]}>{med.medicineName}</Text>
-                <Text style={[styles.tableCell, { width: '19%' }]}>{med.dosage}</Text>
-                <Text style={[styles.tableCell, { width: '19%' }]}>{med.frequency}</Text>
-                <Text style={[styles.tableCell, { width: '19%' }]}>{med.duration}</Text>
+                <Text style={[styles.tableCell, { width: '6%' }]}>{index + 1}</Text>
+                <Text style={[styles.tableCell, { width: '30%', fontWeight: 'bold' }]}>{med.medicineName}</Text>
+                <Text style={[styles.tableCell, { width: '16%' }]}>{med.dosage}</Text>
+                <Text style={[styles.tableCell, { width: '16%' }]}>{med.frequency}</Text>
+                <Text style={[styles.tableCell, { width: '16%' }]}>{formatTiming(med.timing)}</Text>
+                <Text style={[styles.tableCell, { width: '16%' }]}>{med.duration}</Text>
               </View>
             ))}
           </View>

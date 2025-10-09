@@ -28,6 +28,7 @@ import {
   useRevenueTrends,
   useRecentActivities,
   useLowStockAlerts,
+  useExpiredItemsAlerts,
   useUpcomingAppointments
 } from "@/hooks/useDashboard";
 
@@ -41,6 +42,7 @@ const Dashboard = () => {
   const { data: revenueTrends, isLoading: revenueLoading } = useRevenueTrends(refreshKey);
   const { data: recentActivities, isLoading: activitiesLoading } = useRecentActivities(refreshKey);
   const { data: lowStockAlerts, isLoading: stockLoading } = useLowStockAlerts(refreshKey);
+  const { data: expiredItemsAlerts, isLoading: expiredLoading } = useExpiredItemsAlerts(refreshKey);
   const { data: upcomingAppointments, isLoading: upcomingLoading } = useUpcomingAppointments(refreshKey);
 
   const handleRefresh = () => {
@@ -243,7 +245,7 @@ const Dashboard = () => {
       </div>
 
       {/* Alerts and Upcoming Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -257,6 +259,23 @@ const Dashboard = () => {
               title="Low Stock Alerts"
               items={lowStockAlerts?.data || []}
               isLoading={stockLoading}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-800" />
+              Expired Items
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AlertsPanel
+              type="expired"
+              title="Expired Items"
+              items={expiredItemsAlerts?.data || []}
+              isLoading={expiredLoading}
             />
           </CardContent>
         </Card>

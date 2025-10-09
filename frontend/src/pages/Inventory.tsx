@@ -45,9 +45,10 @@ const Inventory = () => {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
-  type FilterType = 'all' | 'lowStock' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
+  type FilterType = 'all' | 'lowStock' | 'expired' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [showLowStockModal, setShowLowStockModal] = useState(false);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [showExpiringModal, setShowExpiringModal] = useState(false);
 
   // Fetch categories
@@ -112,9 +113,26 @@ const Inventory = () => {
   };
 
   const lowStockItems = inventory.filter(item => item.currentStock <= item.minStock);
+  
+  const expiredItems = inventory.filter(item => {
+    if (!item.expiryDate) return false;
+    const expiryDate = new Date(item.expiryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiryDate.setHours(0, 0, 0, 0);
+    return expiryDate < today;
+  });
+  
   const expiringItems = inventory.filter(item => {
     if (!item.expiryDate) return false;
     const expiryDate = new Date(item.expiryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiryDate.setHours(0, 0, 0, 0);
+    
+    // Not expired but expiring within 30 days
+    if (expiryDate < today) return false;
+    
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return expiryDate <= thirtyDaysFromNow;
@@ -126,9 +144,24 @@ const Inventory = () => {
   const filteredInventory = inventory.filter(item => {
     if (filterType === 'all') return true;
     if (filterType === 'lowStock') return item.currentStock <= item.minStock;
+    if (filterType === 'expired') {
+      if (!item.expiryDate) return false;
+      const expiryDate = new Date(item.expiryDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      expiryDate.setHours(0, 0, 0, 0);
+      return expiryDate < today;
+    }
     if (filterType === 'expiringSoon') {
       if (!item.expiryDate) return false;
       const expiryDate = new Date(item.expiryDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      expiryDate.setHours(0, 0, 0, 0);
+      
+      // Not expired but expiring within 30 days
+      if (expiryDate < today) return false;
+      
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
       return expiryDate <= thirtyDaysFromNow;
@@ -167,7 +200,7 @@ const Inventory = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-900">{inventory.length}</div>
@@ -180,7 +213,13 @@ const Inventory = () => {
             <div className="text-sm text-gray-600">Low Stock Alerts</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowExpiredModal(true)}>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-800">{expiredItems.length}</div>
+            <div className="text-sm text-gray-600">Expired Items</div>
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowExpiringModal(true)}>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-yellow-600">{expiringItems.length}</div>
             <div className="text-sm text-gray-600">Expiring Soon</div>
@@ -195,8 +234,47 @@ const Inventory = () => {
       </div>
 
       {/* Alerts */}
-      {(lowStockItems.length > 0 || expiringItems.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {(expiredItems.length > 0 || lowStockItems.length > 0 || expiringItems.length > 0) && (
+        <div className="space-y-4">
+          {/* Critical Expired Items Alert */}
+          {expiredItems.length > 0 && (
+            <Card className="border-red-600 bg-red-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-800">
+                  <AlertTriangle className="h-5 w-5" />
+                  EXPIRED ITEMS - IMMEDIATE ACTION REQUIRED
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {expiredItems.slice(0, 3).map((item) => (
+                    <div key={item.id} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-red-300">
+                      <span className="font-medium text-red-800">{item.name} <span className="text-xs text-gray-500">({item.code})</span></span>
+                      <div className="text-right">
+                        <Badge className="bg-red-600 text-white">
+                          EXPIRED: {new Date(item.expiryDate!).toLocaleDateString()}
+                        </Badge>
+                        <div className="text-xs text-red-600 mt-1">{item.currentStock} {item.unit} - DO NOT USE</div>
+                      </div>
+                    </div>
+                  ))}
+                  {expiredItems.length > 3 && (
+                    <div className="text-sm text-red-700">
+                      +{expiredItems.length - 3} more expired items
+                      <button
+                        className="ml-2 text-red-800 underline hover:text-red-900 font-medium"
+                        onClick={() => setShowExpiredModal(true)}
+                      >
+                        Show All
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {lowStockItems.length > 0 && (
             <Card className="border-red-200">
               <CardHeader>
@@ -264,6 +342,7 @@ const Inventory = () => {
               </CardContent>
             </Card>
           )}
+          </div>
         </div>
       )}
 
@@ -301,6 +380,7 @@ const Inventory = () => {
                   <SelectValue>
                     {filterType === 'all' && 'Show All'}
                     {filterType === 'lowStock' && 'Low Stock'}
+                    {filterType === 'expired' && 'Expired Items'}
                     {filterType === 'expiringSoon' && 'Expiring Soon'}
                     {filterType === 'lastRestocked' && 'Restock Date'}
                     {filterType === 'createdAt' && 'Created Date'}
@@ -310,6 +390,7 @@ const Inventory = () => {
                   <div className="px-2 py-1 text-xs text-gray-500">By Status</div>
                   <SelectItem value="all">Show All</SelectItem>
                   <SelectItem value="lowStock">Low Stock</SelectItem>
+                  <SelectItem value="expired">Expired Items</SelectItem>
                   <SelectItem value="expiringSoon">Expiring Soon</SelectItem>
                   <div className="px-2 py-1 text-xs text-gray-500">By Date</div>
                   <SelectItem value="lastRestocked">Restock Date</SelectItem>
@@ -385,13 +466,22 @@ const Inventory = () => {
           {currentInventory.map((item) => {
             const stockStatus = getStockStatus(item.currentStock, item.minStock, item.maxStock);
             const stockPercentage = (item.currentStock / item.maxStock) * 100;
-            // Expiring soon logic
+            // Expiry status logic
+            let isExpired = false;
             let isExpiringSoon = false;
             if (item.expiryDate) {
               const expiryDate = new Date(item.expiryDate);
-              const thirtyDaysFromNow = new Date();
-              thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-              isExpiringSoon = expiryDate <= thirtyDaysFromNow;
+              const today = new Date();
+              today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
+              expiryDate.setHours(0, 0, 0, 0);
+              
+              if (expiryDate < today) {
+                isExpired = true;
+              } else {
+                const thirtyDaysFromNow = new Date();
+                thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+                isExpiringSoon = expiryDate <= thirtyDaysFromNow;
+              }
             }
             return (
               <Card key={item.id} className="hover:shadow-lg transition-shadow">
@@ -459,7 +549,10 @@ const Inventory = () => {
                         {item.expiryDate ? (
                           <>
                             Exp: {new Date(item.expiryDate).toLocaleDateString()}
-                            {isExpiringSoon && (
+                            {isExpired && (
+                              <Badge className="bg-red-600 text-white border-red-600 px-2 py-0.5 text-xs font-semibold">EXPIRED</Badge>
+                            )}
+                            {!isExpired && isExpiringSoon && (
                               <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 px-2 py-0.5 text-xs font-semibold">Exp Soon</Badge>
                             )}
                           </>
@@ -589,6 +682,30 @@ const Inventory = () => {
                 <span className="text-xs text-red-600 font-mono">Stock: {item.currentStock}</span>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expired Items Modal */}
+      <Dialog open={showExpiredModal} onOpenChange={setShowExpiredModal}>
+        <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-red-800">⚠️ All Expired Items - CRITICAL</DialogTitle>
+          </DialogHeader>
+          <div className="divide-y">
+            {expiredItems.map((item) => (
+              <div key={item.id} className="py-2 flex justify-between items-center text-sm">
+                <span className="font-medium text-red-800">{item.name} <span className="text-xs text-gray-400">({item.code})</span></span>
+                <div className="text-right">
+                  <span className="text-xs text-red-800 font-bold block">EXPIRED: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'No expiry'}</span>
+                  <span className="text-xs text-red-600">{item.currentStock} {item.unit} - DO NOT USE</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded">
+            <p className="text-sm text-red-800 font-medium">⚠️ Healthcare Safety Warning:</p>
+            <p className="text-xs text-red-700 mt-1">These items have expired and must NOT be used for patient care. Remove from active inventory immediately.</p>
           </div>
         </DialogContent>
       </Dialog>

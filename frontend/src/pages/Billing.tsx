@@ -83,11 +83,13 @@ interface Bill {
   }
   prescription?: {
     doctorName: string
+    investigations?: string
     medications: Array<{
       id: number
       medicineName: string
       dosage: string
       frequency: string
+      timing?: string
       duration: string
     }>
   }
@@ -99,6 +101,24 @@ interface BillingAnalytics {
   totalBills: number
   totalGST: number
 }
+
+// Helper function to format timing display
+const formatTiming = (timing?: string) => {
+  if (!timing || timing === 'No meal restriction') return 'No meal restriction';
+  
+  const timingMap: Record<string, string> = {
+    'AC': 'Before meals (AC)',
+    'PC': 'After meals (PC)', 
+    'HS': 'At bedtime (HS)',
+    'Empty stomach': 'Empty stomach',
+    'With food': 'With food',
+    'Before meals': 'Before meals',
+    'After meals': 'After meals',
+    'At bedtime': 'At bedtime'
+  };
+  
+  return timingMap[timing] || timing;
+};
 
 const Billing = () => {
   const [bills, setBills] = useState<Bill[]>([])
@@ -125,6 +145,7 @@ const Billing = () => {
   const [gstRates, setGstRates] = useState<GstRate[]>([])
   const [selectedGst, setSelectedGst] = useState<GstRate | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Cash")
+  const [showAllMedicines, setShowAllMedicines] = useState(false)
   const { toast } = useToast()
   const location = useLocation()
 
@@ -487,8 +508,18 @@ const Billing = () => {
       if (selectedBill && selectedBill.id === billId) {
         fetchBillDetails(billId, false)
       }
-    } catch (error) {
+      toast({
+        title: "Success",
+        description: `Bill status updated to ${status}`,
+      })
+    } catch (error: any) {
       console.error("Error updating payment status:", error)
+      const errorMessage = error.response?.data?.error || error.message || "Failed to update payment status"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
     }
   }
 
@@ -514,15 +545,17 @@ const Billing = () => {
       setIsAddItemOpen(false)
       setItemForm({ type: "medicine", name: "", quantity: 1, unitPrice: 0, description: "", inventoryItemId: null })
       setSelectedGst(null)
+      setMedicineSearch("")
       toast({
         title: "Success",
         description: `${itemForm.type === "medicine" ? "Medicine" : "Service"} added successfully`,
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding item:", error)
+      const errorMessage = error.response?.data?.error || error.message || `Failed to add ${itemForm.type}`
       toast({
         title: "Error",
-        description: `Failed to add ${itemForm.type}`,
+        description: errorMessage,
         variant: "destructive",
       })
     }
@@ -565,14 +598,18 @@ const Billing = () => {
       description: `${medicine.name} - ${medicine.unit}`,
       inventoryItemId: medicine.id,
     })
+    // Clear search to close dropdown
+    setMedicineSearch("")
   }
 
   const selectPrescribedMedicine = (medication: any) => {
+    const timingDisplay = formatTiming(medication.timing)
+    
     setItemForm({
       ...itemForm,
       type: "medicine",
       name: medication.medicineName,
-      description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} for ${medication.duration}`,
+      description: `${medication.medicineName} - ${medication.dosage} - ${medication.frequency} • ${timingDisplay} • ${medication.duration}`,
     })
     
     // Try to find this medicine in inventory
@@ -587,6 +624,18 @@ const Billing = () => {
         inventoryItemId: inventoryMedicine.id,
       }))
     }
+  }
+
+  const selectPrescribedInvestigation = (investigation: string) => {
+    setItemForm({
+      ...itemForm,
+      type: "service",
+      name: investigation.trim(),
+      quantity: 1,
+      unitPrice: 0,
+      description: `Lab Test: ${investigation.trim()}`,
+      inventoryItemId: null,
+    })
   }
 
   const deleteItem = async (itemId: number) => {
@@ -620,7 +669,7 @@ const Billing = () => {
       gstRateId: item.gstRate?.id || null,
       inventoryItemId: item.inventoryItem?.id || null,
     })
-    setSelectedGst(item.gstRate || null)
+    setSelectedGst(item.gstRate ? { ...item.gstRate, isActive: true } : null)
     setIsEditItemOpen(true)
   }
 
@@ -974,7 +1023,12 @@ const Billing = () => {
       )}
 
       {/* Bill Details Dialog */}
-      <Dialog open={isViewBillOpen} onOpenChange={setIsViewBillOpen}>
+      <Dialog open={isViewBillOpen} onOpenChange={(open) => {
+        setIsViewBillOpen(open)
+        if (!open) {
+          setShowAllMedicines(false)
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Bill Details - {selectedBill?.billNumber}</DialogTitle>
@@ -1002,37 +1056,80 @@ const Billing = () => {
                 </div>
               </div>
 
+              {/* Prescribed Investigations / Lab Tests - Moved to top */}
+              {selectedBill.prescription?.investigations && selectedBill.prescription.investigations.trim() && (
+                <div className="p-3 border rounded-lg bg-green-50">
+                  <Label className="text-sm font-medium text-green-800 mb-2 block">Prescribed Investigations / Lab Tests</Label>
+                  <div className="text-sm text-green-700 whitespace-pre-wrap">
+                    {selectedBill.prescription.investigations}
+                  </div>
+                </div>
+              )}
+
 
 
               {/* Prescribed Medicines */}
               {selectedBill.prescription?.medications && selectedBill.prescription.medications.length > 0 && (
                 <div>
-                  <Label className="text-lg font-medium mb-3 block">Prescribed Medicines</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
-                    {(selectedBill.prescription?.medications || []).map((medication) => (
-                      <div key={medication.id} className="flex items-center justify-between p-2 border rounded-lg bg-blue-50">
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{medication.medicineName}</div>
-                          <div className="text-xs text-gray-600">
-                            {medication.dosage} • {medication.frequency} • {medication.duration}
+                  <Label className="text-lg font-medium mb-3 block">
+                    Prescribed Medicines ({selectedBill.prescription.medications.length})
+                  </Label>
+                  <div className="border rounded-lg bg-blue-50 p-3 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {(selectedBill.prescription?.medications || [])
+                        .slice(0, showAllMedicines ? undefined : 6)
+                        .map((medication) => (
+                        <div key={medication.id} className="flex items-center justify-between p-2 border rounded-lg bg-white shadow-sm">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{medication.medicineName}</div>
+                            <div className="text-xs text-gray-600 truncate">
+                              {medication.dosage} • {medication.frequency} • {formatTiming(medication.timing)} • {medication.duration}
+                            </div>
                           </div>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              selectPrescribedMedicine(medication)
+                              setIsAddItemOpen(true)
+                            }}
+                            disabled={selectedBill.status === "Paid" || selectedBill.status === "Cancelled"}
+                            className="ml-2 flex-shrink-0"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
                         </div>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => {
-                            selectPrescribedMedicine(medication)
-                            setIsAddItemOpen(true)
-                          }}
-                          disabled={selectedBill.status === "Paid" || selectedBill.status === "Cancelled"}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
+                      ))}
+                    </div>
+                    
+                    {/* Show More/Less Button */}
+                    {selectedBill.prescription.medications.length > 6 && (
+                      <div className="mt-3 text-center">
+                        {!showAllMedicines ? (
+                          <div className="text-sm text-blue-700">
+                            +{selectedBill.prescription.medications.length - 6} more medicines
+                            <button
+                              className="ml-2 text-blue-800 underline hover:text-blue-900 font-medium"
+                              onClick={() => setShowAllMedicines(true)}
+                            >
+                              Show All
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            className="text-sm text-blue-800 underline hover:text-blue-900 font-medium"
+                            onClick={() => setShowAllMedicines(false)}
+                          >
+                            Show Less
+                          </button>
+                        )}
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
+
+
 
               {/* Bill Items */}
               <div>
@@ -1272,13 +1369,21 @@ const Billing = () => {
       </Dialog>
 
       {/* Add Item Dialog */}
-      <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
+      <Dialog open={isAddItemOpen} onOpenChange={(open) => {
+        setIsAddItemOpen(open)
+        if (!open) {
+          // Reset form when closing
+          setItemForm({ type: "medicine", name: "", quantity: 1, unitPrice: 0, description: "", inventoryItemId: null })
+          setSelectedGst(null)
+          setMedicineSearch("")
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Item to Bill</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
             <div>
               <Label>Item Type</Label>
               <Select value={itemForm.type} onValueChange={(value) => setItemForm({ ...itemForm, type: value })}>
@@ -1304,16 +1409,37 @@ const Billing = () => {
                   placeholder="Search medicines in inventory..."
                 />
                 {medicineSearch && availableMedicines.length > 0 && (
-                  <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg">
+                  <div className="mt-2 max-h-48 overflow-y-auto border rounded-lg bg-white shadow-lg">
                     {(availableMedicines || []).map((medicine: any) => (
                       <div 
                         key={medicine.id} 
-                        className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                        onClick={() => selectMedicine(medicine)}
+                        className={`p-3 hover:bg-medical-50 cursor-pointer border-b last:border-b-0 transition-colors ${
+                          itemForm.inventoryItemId === medicine.id ? 'bg-medical-100 border-medical-300' : ''
+                        }`}
+                        onClick={() => {
+                          selectMedicine(medicine)
+                          setMedicineSearch("")
+                        }}
                       >
-                        <div className="font-medium">{medicine.name}</div>
-                        <div className="text-sm text-gray-600">
-                          Stock: {medicine.currentStock} {medicine.unit} • ₹{medicine.pricePerUnit}/{medicine.unit}
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">{medicine.name}</div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              <span className="inline-flex items-center gap-2">
+                                <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs">
+                                  Stock: {medicine.currentStock} {medicine.unit}
+                                </span>
+                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
+                                  ₹{medicine.pricePerUnit}/{medicine.unit}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                          {itemForm.inventoryItemId === medicine.id && (
+                            <div className="ml-2">
+                              <div className="w-2 h-2 bg-medical-500 rounded-full"></div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1328,7 +1454,15 @@ const Billing = () => {
                 value={itemForm.name}
                 onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
                 placeholder={`Enter ${itemForm.type} name`}
+                disabled={itemForm.inventoryItemId !== null}
+                className={itemForm.inventoryItemId !== null ? "bg-gray-100 cursor-not-allowed" : ""}
+                title={itemForm.inventoryItemId !== null ? "Item name is locked for inventory items" : ""}
               />
+              {itemForm.inventoryItemId !== null && (
+                <div className="text-xs text-gray-600 mt-1">
+                  💡 Name is automatically set from inventory
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -1349,7 +1483,15 @@ const Billing = () => {
                   onChange={(e) => setItemForm({ ...itemForm, unitPrice: Number(e.target.value) })}
                   min="0"
                   step="0.01"
+                  disabled={itemForm.inventoryItemId !== null}
+                  className={itemForm.inventoryItemId !== null ? "bg-gray-100 cursor-not-allowed" : ""}
+                  title={itemForm.inventoryItemId !== null ? "Unit price is locked for inventory items" : ""}
                 />
+                {itemForm.inventoryItemId !== null && (
+                  <div className="text-xs text-gray-600 mt-1">
+                    💡 Price is automatically set from inventory
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1362,6 +1504,34 @@ const Billing = () => {
                 placeholder="Select GST rate (optional)"
               />
             </div>
+
+            {/* Show inventory info if selected */}
+            {itemForm.inventoryItemId && (
+              <div className="p-3 bg-medical-50 rounded-lg border border-medical-200">
+                <div className="text-sm font-medium text-medical-800 mb-2 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-medical-500 rounded-full"></div>
+                  Inventory Information
+                </div>
+                {(() => {
+                  const selectedMedicine = availableMedicines.find((med: any) => med.id === itemForm.inventoryItemId)
+                  return selectedMedicine ? (
+                    <div className="text-sm text-medical-700 space-y-1">
+                      <div>Code: {selectedMedicine.code || 'N/A'}</div>
+                      <div>Current Stock: {selectedMedicine.currentStock} {selectedMedicine.unit}</div>
+                      <div>Price per Unit: ₹{selectedMedicine.pricePerUnit}</div>
+                      {selectedMedicine.batches?.[0] && (
+                        <div className="mt-2 pt-2 border-t border-medical-200">
+                          <div>Latest Batch: {selectedMedicine.batches[0].batchNumber}</div>
+                          {selectedMedicine.batches[0].expiryDate && (
+                            <div>Expiry: {new Date(selectedMedicine.batches[0].expiryDate).toLocaleDateString()}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : null
+                })()}
+              </div>
+            )}
 
             <div>
               <Label>Description (Optional)</Label>
@@ -1414,7 +1584,7 @@ const Billing = () => {
           </DialogHeader>
 
           {editingItem && (
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="text-sm text-gray-600">Item Type</div>
                 <div className="font-medium capitalize">{editingItem.itemType}</div>
@@ -1426,7 +1596,15 @@ const Billing = () => {
                   value={editItemForm.name}
                   onChange={(e) => setEditItemForm({ ...editItemForm, name: e.target.value })}
                   placeholder="Enter item name"
+                  disabled={editingItem?.inventoryItem !== null && editingItem?.inventoryItem !== undefined}
+                  className={editingItem?.inventoryItem ? "bg-gray-100 cursor-not-allowed" : ""}
+                  title={editingItem?.inventoryItem ? "Item name is locked for inventory items" : ""}
                 />
+                {editingItem?.inventoryItem && (
+                  <div className="text-xs text-gray-600 mt-1">
+                    💡 Name is automatically set from inventory
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1447,6 +1625,8 @@ const Billing = () => {
                     onChange={(e) => setEditItemForm({ ...editItemForm, unitPrice: Number(e.target.value) })}
                     min="0"
                     step="0.01"
+                    disabled={editingItem?.inventoryItem !== null && editingItem?.inventoryItem !== undefined}
+                    title={editingItem?.inventoryItem ? "Unit price is locked for inventory items" : ""}
                   />
                 </div>
               </div>
@@ -1659,7 +1839,7 @@ const Billing = () => {
       <InvoiceViewModal
         isOpen={isInvoiceViewOpen}
         onClose={() => setIsInvoiceViewOpen(false)}
-        bill={selectedBill}
+        bill={selectedBill && selectedBill.items ? selectedBill as any : null}
       />
     </div>
   )

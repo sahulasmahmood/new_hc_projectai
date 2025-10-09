@@ -15,6 +15,7 @@ interface Prescription {
     medicineName: string;
     dosage: string;
     frequency: string;
+    timing?: string;
     duration: string;
   }>;
   investigations?: string;
@@ -51,6 +52,22 @@ interface PrescriptionPrintTemplateProps {
   patientName: string;
   patientId: string;
 }
+
+// Helper function to format timing display
+const formatTiming = (timing?: string) => {
+  if (!timing) return 'No meal restriction';
+  
+  const timingMap: Record<string, string> = {
+    'AC': 'Before meals (AC)',
+    'PC': 'After meals (PC)',
+    'HS': 'At bedtime (HS)',
+    'Empty stomach': 'Empty stomach',
+    'With food': 'With food',
+    'No meal restriction': 'No meal restriction'
+  };
+  
+  return timingMap[timing] || timing;
+};
 
 const PrescriptionPrintTemplate = React.forwardRef<HTMLDivElement, PrescriptionPrintTemplateProps>(
   ({ prescription, hospitalInfo, patientName, patientId }, ref) => {
@@ -289,6 +306,7 @@ const PrescriptionPrintTemplate = React.forwardRef<HTMLDivElement, PrescriptionP
                   <th style={styles.tableHeader}>Medicine Name</th>
                   <th style={styles.tableHeader}>Dosage</th>
                   <th style={styles.tableHeader}>Frequency</th>
+                  <th style={styles.tableHeader}>Timing</th>
                   <th style={styles.tableHeader}>Duration</th>
                 </tr>
               </thead>
@@ -299,6 +317,7 @@ const PrescriptionPrintTemplate = React.forwardRef<HTMLDivElement, PrescriptionP
                     <td style={styles.tableCell}><strong>{med.medicineName}</strong></td>
                     <td style={styles.tableCell}>{med.dosage}</td>
                     <td style={styles.tableCell}>{med.frequency}</td>
+                    <td style={styles.tableCell}>{formatTiming(med.timing)}</td>
                     <td style={styles.tableCell}>{med.duration}</td>
                   </tr>
                 ))}

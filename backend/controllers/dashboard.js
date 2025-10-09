@@ -432,6 +432,81 @@ const getLowStockAlerts = async (req, res) => {
   }
 };
 
+// Get expired items alerts
+const getExpiredItemsAlerts = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+    // Get all inventory items with expiry dates
+    const allItems = await prisma.inventoryItem.findMany({
+      where: {
+        expiryDate: { not: null }
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        currentStock: true,
+        unit: true,
+        category: true,
+        supplier: true,
+        expiryDate: true
+      },
+      orderBy: {
+        expiryDate: 'asc'
+      }
+    });
+
+    // Separate expired and expiring soon items
+    const expiredItems = [];
+    const expiringSoonItems = [];
+
+    allItems.forEach(item => {
+      if (item.expiryDate) {
+        const expiryDate = new Date(item.expiryDate);
+        expiryDate.setHours(0, 0, 0, 0);
+        
+        if (expiryDate < today) {
+          expiredItems.push({
+            ...item,
+            isExpired: true,
+            isExpiringSoon: false
+          });
+        } else if (expiryDate <= thirtyDaysFromNow) {
+          expiringSoonItems.push({
+            ...item,
+            isExpired: false,
+            isExpiringSoon: true
+          });
+        }
+      }
+    });
+
+    // Combine expired (priority) and expiring soon items
+    const combinedItems = [...expiredItems, ...expiringSoonItems].slice(0, 10);
+
+    res.json({
+      success: true,
+      data: combinedItems,
+      counts: {
+        expired: expiredItems.length,
+        expiringSoon: expiringSoonItems.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching expired items alerts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch expired items alerts',
+      error: error.message
+    });
+  }
+};
+
 // Get upcoming appointments
 const getUpcomingAppointments = async (req, res) => {
   try {
@@ -481,5 +556,6 @@ module.exports = {
   getTopMedicines,
   getRecentActivities,
   getLowStockAlerts,
+  getExpiredItemsAlerts,
   getUpcomingAppointments
 };
