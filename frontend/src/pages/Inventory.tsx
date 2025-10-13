@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Package, Search, Filter, AlertTriangle, Truck, Calendar, TrendingDown, TrendingUp, Edit } from "lucide-react";
+import { Package, Search, Filter, AlertTriangle, Truck, Calendar, TrendingDown, TrendingUp, Edit, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import api from "@/lib/api";
 import InventoryFormDialog from "@/components/inventory/InventoryFormDialog";
@@ -12,6 +12,7 @@ import StockUpdateDialog from "@/components/inventory/StockUpdateDialog";
 import DeleteConfirmDialog from "@/components/inventory/DeleteConfirmDialog";
 import RestockDialog from "@/components/inventory/RestockDialog";
 import InventoryBatchHistoryDialog from "@/components/inventory/InventoryBatchHistoryDialog";
+import InventoryAuditDialog from "@/components/inventory/InventoryAuditDialog";
 
 interface InventoryItem {
   id: number;
@@ -43,6 +44,7 @@ const Inventory = () => {
     startDate: "",
     endDate: ""
   });
+  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'yesterday' | 'last7days' | 'thismonth' | 'custom'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   type FilterType = 'all' | 'lowStock' | 'expired' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
@@ -186,6 +188,56 @@ const Inventory = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentInventory = filteredInventory.slice(indexOfFirstItem, indexOfLastItem);
   const handlePageChange = (page: number) => setCurrentPage(page);
+  // Handle date range filter changes
+  const handleDateRangeChange = (value: string) => {
+    setDateRangeFilter(value as any);
+    
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const last7Days = new Date(today);
+    last7Days.setDate(last7Days.getDate() - 7);
+    
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+    
+    switch (value) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        });
+        break;
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'all':
+      default:
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        });
+        break;
+    }
+  };
+
   // Reset to first page when filter changes
   useEffect(() => { setCurrentPage(1); }, [dateRange.startDate, dateRange.endDate, selectedCategory, searchQuery, filterType]);
 
@@ -196,7 +248,19 @@ const Inventory = () => {
           <Package className="h-8 w-8 text-medical-500" />
           <h1 className="text-3xl font-bold text-gray-900">Inventory Management</h1>
         </div>
-        <InventoryFormDialog onSuccess={fetchInventory} />
+        <div className="flex gap-2">
+          <InventoryAuditDialog 
+            itemId={0} 
+            itemName="All Items"
+            trigger={
+              <Button variant="outline">
+                <History className="h-4 w-4 mr-2" />
+                View All Audit Logs
+              </Button>
+            }
+          />
+          <InventoryFormDialog onSuccess={fetchInventory} />
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -397,44 +461,51 @@ const Inventory = () => {
                   <SelectItem value="createdAt">Created Date</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Show date range inputs only for date filters */}
+              {/* Date Range Filter - Show for date filters */}
               {(filterType === 'lastRestocked' || filterType === 'createdAt') && (
                 <>
-                  <span className="text-sm text-gray-600">From:</span>
-                  <input
-                    type="date"
-                    value={dateRange.startDate}
-                    onChange={e => setDateRange({ ...dateRange, startDate: e.target.value })}
-                    className="border rounded px-2 py-1"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                  <span className="text-sm text-gray-600">To:</span>
-                  <input
-                    type="date"
-                    value={dateRange.endDate}
-                    onChange={e => setDateRange({ ...dateRange, endDate: e.target.value })}
-                    className="border rounded px-2 py-1"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      const today = new Date().toISOString().split('T')[0];
-                      setDateRange({ startDate: today, endDate: today });
-                    }}
-                    className="text-xs"
-                  >
-                    Today
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDateRange({ startDate: "", endDate: "" })}
-                    className="text-xs"
-                  >
-                    Clear
-                  </Button>
+                  <Select value={dateRangeFilter} onValueChange={handleDateRangeChange}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue>
+                        {dateRangeFilter === 'all' && 'All Time'}
+                        {dateRangeFilter === 'today' && 'Today'}
+                        {dateRangeFilter === 'yesterday' && 'Yesterday'}
+                        {dateRangeFilter === 'last7days' && 'Last 7 Days'}
+                        {dateRangeFilter === 'thismonth' && 'This Month'}
+                        {dateRangeFilter === 'custom' && 'Custom Range'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="yesterday">Yesterday</SelectItem>
+                      <SelectItem value="last7days">Last 7 Days</SelectItem>
+                      <SelectItem value="thismonth">This Month</SelectItem>
+                      <SelectItem value="custom">Custom Range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  
+                  {/* Custom Date Inputs - Show only when custom is selected */}
+                  {dateRangeFilter === 'custom' && (
+                    <>
+                      <span className="text-sm text-gray-600">From:</span>
+                      <input
+                        type="date"
+                        value={dateRange.startDate}
+                        onChange={e => setDateRange({ ...dateRange, startDate: e.target.value })}
+                        className="border rounded px-2 py-1"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                      <span className="text-sm text-gray-600">To:</span>
+                      <input
+                        type="date"
+                        value={dateRange.endDate}
+                        onChange={e => setDateRange({ ...dateRange, endDate: e.target.value })}
+                        className="border rounded px-2 py-1"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -594,6 +665,10 @@ const Inventory = () => {
                       Order History
                     </Button> */}
                     <InventoryBatchHistoryDialog itemId={item.id} />
+                    <InventoryAuditDialog 
+                      itemId={item.id} 
+                      itemName={item.name}
+                    />
                     <InventoryFormDialog
                       item={item}
                       onSuccess={fetchInventory}

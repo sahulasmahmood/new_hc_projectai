@@ -54,7 +54,9 @@ const MedicineSearch: React.FC<MedicineSearchProps> = ({
 
         // Fetch frequent medicines if doctorId provided
         if (doctorId) {
+          console.log('🔄 Fetching frequent medicines for doctorId:', doctorId);
           const frequentResponse = await api.get(`/medicines/frequent?doctorId=${doctorId}&limit=5`);
+          console.log('📥 Received frequent medicines:', frequentResponse.data);
           setFrequentMedicines(frequentResponse.data);
         }
       } catch (error) {

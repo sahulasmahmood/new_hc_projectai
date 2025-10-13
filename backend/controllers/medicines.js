@@ -73,10 +73,19 @@ const getFrequentMedicines = async (req, res) => {
     }
 
     // Get most frequently prescribed medicines by this doctor
+    console.log('🔍 Querying prescriptions for doctor:', doctor.name, 'doctorId:', doctorId);
+    
     const frequentMedicines = await prisma.prescriptionMedication.findMany({
       where: {
         prescription: {
-          doctorName: doctor.name, // Filter by the doctor's name
+          OR: [
+            { doctorName: doctor.name }, // Filter by the doctor's name
+            { 
+              appointment: {
+                doctorId: parseInt(doctorId) // Also filter by appointment doctorId
+              }
+            }
+          ]
         },
       },
       select: {
@@ -85,8 +94,11 @@ const getFrequentMedicines = async (req, res) => {
         frequency: true,
         duration: true,
       },
-      take: parseInt(limit),
+      orderBy: { createdAt: 'desc' },
     });
+    
+    console.log('📊 Found', frequentMedicines.length, 'prescription medications');
+    console.log('📋 Raw medicines:', frequentMedicines.map(m => m.medicineName));
 
     // Group by medicine name and count frequency
     const medicineFrequency = {};
@@ -115,7 +127,11 @@ const getFrequentMedicines = async (req, res) => {
         duration: med.duration,
         displayName: `${med.name} (${med.dosage})`,
         isFrequent: true,
+        count: med.count // Add count for debugging
       }));
+
+    console.log('✅ Returning top', sortedMedicines.length, 'medicines:');
+    sortedMedicines.forEach(m => console.log(`  - ${m.name} (prescribed ${m.count} times)`));
 
     res.json(sortedMedicines);
   } catch (error) {

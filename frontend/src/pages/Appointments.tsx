@@ -141,7 +141,7 @@ const Appointments = () => {
     switch (status) {
       case 'available': return 'bg-green-100 text-green-800 border-green-400 hover:bg-green-200';
       case 'booked': return 'bg-blue-100 text-blue-800 border-blue-400 cursor-not-allowed opacity-60';
-      case 'completed': return 'bg-gray-200 text-gray-700 border-gray-500 cursor-not-allowed opacity-80';
+      case 'completed': return 'bg-gray-300 text-gray-700 border-gray-500 cursor-not-allowed opacity-80';
       case 'unavailable': return 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-50';
       default: return 'bg-gray-100 text-gray-400 border-gray-300';
     }

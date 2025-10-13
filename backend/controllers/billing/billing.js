@@ -717,7 +717,8 @@ const updatePaymentStatus = async (req, res) => {
           include: {
             inventoryItem: true
           }
-        }
+        },
+        patient: true
       }
     })
 

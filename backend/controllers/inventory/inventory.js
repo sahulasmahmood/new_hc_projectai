@@ -270,7 +270,7 @@ const getInventoryItemBatches = async (req, res) => {
 // GET inventory audit logs
 const getInventoryAuditLogs = async (req, res) => {
   try {
-    const { inventoryItemId, action, limit = 50, offset = 0 } = req.query;
+    const { inventoryItemId, action, limit = 50, offset = 0, startDate, endDate } = req.query;
     
     let where = {};
     if (inventoryItemId) {
@@ -278,6 +278,19 @@ const getInventoryAuditLogs = async (req, res) => {
     }
     if (action) {
       where.action = action;
+    }
+    
+    // Add date range filtering
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999); // End of day
+        where.createdAt.lte = endDateTime;
+      }
     }
 
     const auditLogs = await prisma.inventoryAudit.findMany({
@@ -314,18 +327,31 @@ const getInventoryAuditLogs = async (req, res) => {
 const getInventoryItemAuditLogs = async (req, res) => {
   try {
     const { id } = req.params;
-    const { limit = 20, offset = 0 } = req.query;
+    const { limit = 20, offset = 0, startDate, endDate } = req.query;
+    
+    let where = { inventoryItemId: parseInt(id) };
+    
+    // Add date range filtering
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999); // End of day
+        where.createdAt.lte = endDateTime;
+      }
+    }
 
     const auditLogs = await prisma.inventoryAudit.findMany({
-      where: { inventoryItemId: parseInt(id) },
+      where,
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit),
       skip: parseInt(offset),
     });
 
-    const totalCount = await prisma.inventoryAudit.count({
-      where: { inventoryItemId: parseInt(id) }
-    });
+    const totalCount = await prisma.inventoryAudit.count({ where });
 
     res.json({
       auditLogs,

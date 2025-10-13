@@ -53,6 +53,9 @@ const createPrescription = async (req, res) => {
       }
     }
 
+    console.log('💊 Creating prescription for doctor:', finalDoctorName, 'doctorId:', doctorId);
+    console.log('📝 Medications:', medications?.map(m => m.name));
+
     // Create prescription with medications
     const prescription = await prisma.prescription.create({
       data: {
