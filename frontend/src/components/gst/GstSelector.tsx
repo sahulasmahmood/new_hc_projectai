@@ -7,7 +7,11 @@ interface GstRate {
   name: string;
   rate: number;
   description?: string;
-  category?: string;
+  category?: {
+    id: number;
+    name: string;
+    description?: string;
+  };
   isActive: boolean;
 }
 
@@ -142,7 +146,7 @@ const GstSelector: React.FC<GstSelectorProps> = ({
                     )}
                     {gstRate.category && (
                       <div className="text-xs text-blue-600 bg-blue-50 px-1 rounded mt-1 inline-block">
-                        {gstRate.category}
+                        {gstRate.category.name}
                       </div>
                     )}
                   </div>

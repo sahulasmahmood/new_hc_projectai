@@ -17,13 +17,18 @@ import GstSelector from "@/components/gst/GstSelector"
 import InvoiceViewModal from "@/components/invoice/InvoiceViewModal"
 import DeleteConfirmModal from "@/components/ui/DeleteConfirmModal"
 import { useToast } from "@/hooks/use-toast"
+import GstCategorySelector from "@/components/gst/gst-category-selector"
 
 interface GstRate {
   id: number
   name: string
   rate: number
   description?: string
-  category?: string
+  category?: {
+    id: number
+    name: string
+    description?: string
+  }
   isActive: boolean
 }
 
@@ -323,7 +328,7 @@ const Billing = () => {
     name: "",
     rate: "",
     description: "",
-    category: ""
+    categoryId: ""
   })
   const [editingGst, setEditingGst] = useState<GstRate | null>(null)
 
@@ -434,12 +439,33 @@ const Billing = () => {
         name: gstForm.name,
         rate: parseFloat(gstForm.rate),
         description: gstForm.description || null,
-        category: gstForm.category === "none" ? null : gstForm.category || null
+        categoryId: gstForm.categoryId && gstForm.categoryId !== "none" ? parseInt(gstForm.categoryId) : null
       })
       fetchGstRates()
       resetGstForm()
-    } catch (error) {
-      console.error("Error creating GST rate:", error)
+      toast({
+        title: "Success",
+        description: "GST rate created successfully",
+      })
+    } catch (error: any) {
+      let errorMessage = "Failed to create GST rate. Please try again.";
+      
+      if (error?.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (backendError.includes("already exists") || backendError.includes("duplicate")) {
+          errorMessage = "A GST rate with this name already exists. Please use a different name.";
+        } else if (backendError.includes("validation")) {
+          errorMessage = "Please check your input values. Rate must be between 0 and 100.";
+        } else {
+          errorMessage = backendError;
+        }
+      }
+      
+      toast({
+        title: "Creation Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
     }
   }
 
@@ -450,22 +476,66 @@ const Billing = () => {
         name: gstForm.name,
         rate: parseFloat(gstForm.rate),
         description: gstForm.description || null,
-        category: gstForm.category === "none" ? null : gstForm.category || null
+        categoryId: gstForm.categoryId && gstForm.categoryId !== "none" ? parseInt(gstForm.categoryId) : null
       })
       fetchGstRates()
       resetGstForm()
-    } catch (error) {
-      console.error("Error updating GST rate:", error)
+      toast({
+        title: "Success",
+        description: "GST rate updated successfully",
+      })
+    } catch (error: any) {
+      let errorMessage = "Failed to update GST rate. Please try again.";
+      
+      if (error?.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (backendError.includes("already exists") || backendError.includes("duplicate")) {
+          errorMessage = "A GST rate with this name already exists. Please use a different name.";
+        } else if (backendError.includes("validation")) {
+          errorMessage = "Please check your input values. Rate must be between 0 and 100.";
+        } else if (backendError.includes("not found")) {
+          errorMessage = "GST rate not found. It may have been deleted by another user.";
+        } else {
+          errorMessage = backendError;
+        }
+      }
+      
+      toast({
+        title: "Update Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
     }
   }
 
   const deleteGstRate = async (id: number) => {
-    await api.delete(`/gst/${id}`)
-    fetchGstRates()
-    toast({
-      title: "Success",
-      description: "GST rate deleted successfully",
-    })
+    try {
+      await api.delete(`/gst/${id}`)
+      fetchGstRates()
+      toast({
+        title: "Success",
+        description: "GST rate deleted successfully",
+      })
+    } catch (error: any) {
+      let errorMessage = "Failed to delete GST rate. Please try again.";
+      
+      if (error?.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (backendError.includes("foreign key constraint") || backendError.includes("referenced")) {
+          errorMessage = "Cannot delete this GST rate as it is being used in existing bills or items. Please deactivate it instead.";
+        } else if (backendError.includes("not found")) {
+          errorMessage = "GST rate not found. It may have already been deleted.";
+        } else {
+          errorMessage = backendError;
+        }
+      }
+      
+      toast({
+        title: "Delete Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    }
   }
 
   const cancelBill = async (billId: number) => {
@@ -480,13 +550,32 @@ const Billing = () => {
     try {
       await api.patch(`/gst/${id}/toggle-status`)
       fetchGstRates()
-    } catch (error) {
-      console.error("Error toggling GST status:", error)
+      toast({
+        title: "Success",
+        description: "GST rate status updated successfully",
+      })
+    } catch (error: any) {
+      let errorMessage = "Failed to update GST rate status. Please try again.";
+      
+      if (error?.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (backendError.includes("not found")) {
+          errorMessage = "GST rate not found. It may have been deleted by another user.";
+        } else {
+          errorMessage = backendError;
+        }
+      }
+      
+      toast({
+        title: "Status Update Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
     }
   }
 
   const resetGstForm = () => {
-    setGstForm({ name: "", rate: "", description: "", category: "none" })
+    setGstForm({ name: "", rate: "", description: "", categoryId: "none" })
     setEditingGst(null)
   }
 
@@ -496,7 +585,7 @@ const Billing = () => {
       name: gst.name,
       rate: gst.rate.toString(),
       description: gst.description || "",
-      category: gst.category || "none"
+      categoryId: gst.category?.id?.toString() || "none"
     })
   }
 
@@ -1738,21 +1827,12 @@ const Billing = () => {
                   />
                 </div>
                 <div>
-                  <Label>Category</Label>
-                  <Select value={gstForm.category} onValueChange={(value) => setGstForm({ ...gstForm, category: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No category</SelectItem>
-                      <SelectItem value="medicine">Medicine</SelectItem>
-                      <SelectItem value="cosmetic">Cosmetic</SelectItem>
-                      <SelectItem value="lab">Lab Test</SelectItem>
-                      <SelectItem value="service">Service</SelectItem>
-                      <SelectItem value="equipment">Equipment</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>GST Category</Label>
+                  <GstCategorySelector
+                    value={gstForm.categoryId}
+                    onValueChange={(value) => setGstForm({ ...gstForm, categoryId: value })}
+                    placeholder="Select GST category"
+                  />
                 </div>
                 <div>
                   <Label>Description</Label>
@@ -1789,7 +1869,7 @@ const Billing = () => {
                       <div className="font-medium">{gst.name}</div>
                       <div className="text-sm text-gray-600">
                         Rate: {gst.rate}%
-                        {gst.category && ` • Category: ${gst.category}`}
+                        {gst.category && ` • Category: ${gst.category.name}`}
                         {gst.description && ` • ${gst.description}`}
                       </div>
                     </div>

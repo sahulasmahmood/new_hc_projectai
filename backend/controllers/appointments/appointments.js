@@ -125,6 +125,31 @@ const createAppointment = async (req, res) => {
       return res.status(400).json({ error: 'Cannot schedule an appointment in the past.' });
     }
 
+    // Check for time slot conflicts (except for emergency appointments)
+    if (type !== 'Emergency') {
+      const conflictingAppointment = await prisma.appointment.findFirst({
+        where: {
+          date: appointmentDate,
+          time: time,
+          doctorId: doctorId ? parseInt(doctorId) : null,
+          status: {
+            not: 'Cancelled' // Don't consider cancelled appointments as conflicts
+          }
+        }
+      });
+
+      if (conflictingAppointment) {
+        const doctorText = doctorName ? `Dr. ${doctorName}` : 'This doctor';
+        const conflictDetails = doctorId 
+          ? `${doctorText} already has an appointment at ${time} on ${date}. Please choose a different time slot.`
+          : `The ${time} time slot on ${date} is already booked. Please select a different time.`;
+        
+        return res.status(409).json({ 
+          error: conflictDetails
+        });
+      }
+    }
+
     // Check maximum appointments per day limit
     const appointmentSettings = await prisma.appointmentSettings.findFirst();
     if (!appointmentSettings) {
@@ -450,18 +475,30 @@ const rescheduleAppointment = async (req, res) => {
     }
 
     // Check if the new time slot is available (excluding the current appointment)
-    const conflictingAppointment = await prisma.appointment.findFirst({
-      where: {
-        date: appointmentDate, // Use the already created timezone-safe date
-        time: newTime,
-        id: { not: parseInt(id) } // Exclude the current appointment
-      }
-    });
-
-    if (conflictingAppointment) {
-      return res.status(409).json({ 
-        error: `Time slot ${newTime} on ${newDate} is already booked by ${conflictingAppointment.patientName}. Please select a different time.` 
+    // Skip conflict check for emergency appointments
+    if (currentAppointment.type !== 'Emergency') {
+      const conflictingAppointment = await prisma.appointment.findFirst({
+        where: {
+          date: appointmentDate, // Use the already created timezone-safe date
+          time: newTime,
+          doctorId: currentAppointment.doctorId, // Check for same doctor conflicts
+          id: { not: parseInt(id) }, // Exclude the current appointment
+          status: {
+            not: 'Cancelled' // Don't consider cancelled appointments as conflicts
+          }
+        }
       });
+
+      if (conflictingAppointment) {
+        const doctorText = currentAppointment.doctorName ? `Dr. ${currentAppointment.doctorName}` : 'This doctor';
+        const conflictDetails = currentAppointment.doctorId 
+          ? `${doctorText} already has an appointment at ${newTime} on ${newDate}. Please choose a different time slot.`
+          : `The ${newTime} time slot on ${newDate} is already booked. Please select a different time.`;
+        
+        return res.status(409).json({ 
+          error: conflictDetails
+        });
+      }
     }
 
     // Check maximum appointments per day limit for rescheduling to a different date

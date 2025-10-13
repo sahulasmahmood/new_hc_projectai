@@ -40,6 +40,16 @@ interface Appointment {
   notes?: string;
   status: string;
   patientVisibleId?: string;
+  doctorId?: number;
+  doctorName?: string;
+}
+
+interface Doctor {
+  id: number;
+  name: string;
+  specialization: string;
+  qualification?: string;
+  consultationFee?: string;
 }
 
 interface ScheduleDialogProps {
@@ -57,9 +67,12 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
     date: "",
     time: "",
     type: "",
-    doctor: "",
+    doctorId: "",
+    doctorName: "",
     notes: ""
   });
+  
+  const [availableDoctors, setAvailableDoctors] = useState<Doctor[]>([]);
 
   // Use appointment settings hook
   const { 
@@ -78,11 +91,32 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
   const appointmentTypes = settings.appointmentTypes;
   const slotDuration = settings.defaultDuration; // Use defaultDuration from settings
 
+  // Fetch available doctors when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      const fetchDoctors = async () => {
+        try {
+          const response = await api.get('/doctors');
+          setAvailableDoctors(response.data || []);
+        } catch (error) {
+          console.error('Error fetching doctors:', error);
+          setAvailableDoctors([]);
+        }
+      };
+      fetchDoctors();
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (formData.date) {
       const loadExistingAppointments = async () => {
         try {
-          const response = await api.get(`/appointments?date=${formData.date}`);
+          // Include doctor filter if doctor is selected
+          let url = `/appointments?date=${formData.date}`;
+          if (formData.doctorId) {
+            url += `&doctorId=${formData.doctorId}`;
+          }
+          const response = await api.get(url);
           setExistingAppointments(response.data || []);
         } catch (error) {
           console.log("Failed to load existing appointments");
@@ -91,21 +125,36 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
       };
       loadExistingAppointments();
     }
-  }, [formData.date]);
+  }, [formData.date, formData.doctorId]);
 
-  // Get available time slots for the selected date
+  // Get available time slots for the selected date and doctor
   const getAvailableSlots = () => {
-    if (!formData.date) return timeSlots;
+    if (!formData.date || !formData.doctorId) return [];
+    
     const dateObj = new Date(formData.date);
-    let availableSlots = getAvailableTimeSlots(dateObj, existingAppointments).map(slot => slot.time);
+    
+    // Filter out booked appointments for the selected doctor
+    const doctorAppointments = existingAppointments.filter(apt => 
+      apt.status !== 'Cancelled' && 
+      apt.status !== 'Completed' &&
+      // If appointment has doctorId, match it; otherwise, it's a legacy appointment
+      (apt.doctorId ? apt.doctorId.toString() === formData.doctorId : true)
+    );
+    
+    // Get booked time slots for this doctor
+    const bookedTimes = doctorAppointments.map(apt => apt.time);
+    
+    // Start with all time slots
+    let availableSlots = timeSlots.filter(time => !bookedTimes.includes(time));
 
-    // If the selected date is today, allow slot if its END time is in the future
+    // If the selected date is today, filter out past time slots
     const today = new Date();
     const selectedDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
     const slotDurationMinutes = parseInt(slotDuration) || 30;
     const isToday = today.getFullYear() === selectedDate.getFullYear() &&
                    today.getMonth() === selectedDate.getMonth() &&
                    today.getDate() === selectedDate.getDate();
+    
     if (isToday) {
       const now = today;
       availableSlots = availableSlots.filter(time => {
@@ -120,6 +169,7 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
         return slotEnd > now;
       });
     }
+    
     return availableSlots;
   };
 
@@ -138,6 +188,17 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate that we have available slots
+    if (getAvailableSlots().length === 0) {
+      toast({
+        title: "No Available Slots",
+        description: "There are no available time slots for the selected doctor and date. Please choose a different doctor or date.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -194,7 +255,9 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
         type: formData.type,
         duration: String(slotDuration), // Set duration automatically
         notes: formData.notes,
-        status: "Confirmed"
+        status: "Confirmed",
+        doctorId: formData.doctorId ? parseInt(formData.doctorId) : null,
+        doctorName: formData.doctorName || null
       };
       
       await api.post("/appointments", appointmentData);
@@ -204,19 +267,53 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
       });
       setIsLoading(false);
       setIsOpen(false);
-      setFormData({ date: "", time: "", type: "", doctor: "", notes: "" });
-    } catch (error) {
+      resetForm(); // Reset form after successful submission
+    } catch (error: any) {
+      let errorMessage = "Failed to schedule appointment. Please try again.";
+      
+      // Handle specific error messages from backend
+      if (error?.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (backendError.includes("Time slot conflict")) {
+          errorMessage = backendError;
+        } else if (backendError.includes("already booked")) {
+          errorMessage = backendError;
+        } else if (backendError.includes("Maximum appointments")) {
+          errorMessage = backendError;
+        } else {
+          errorMessage = backendError;
+        }
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to schedule appointment. Please try again.",
+        title: "Scheduling Failed",
+        description: errorMessage,
         variant: "destructive"
       });
       setIsLoading(false);
     }
   };
 
+  // Function to reset form data
+  const resetForm = () => {
+    setFormData({ date: "", time: "", type: "", doctorId: "", doctorName: "", notes: "" });
+    setExistingAppointments([]);
+  };
+
+  // Handle dialog open/close without resetting form
+  const handleDialogChange = (open: boolean) => {
+    setIsOpen(open);
+    // Don't reset form when dialog closes - preserve user's input
+  };
+
+  // Handle cancel button click
+  const handleCancel = () => {
+    resetForm();
+    setIsOpen(false);
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <DialogTrigger asChild>
         {trigger}
       </DialogTrigger>
@@ -230,71 +327,97 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
             <Input value={patient.name} disabled />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !formData.date && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.date ? format(new Date(formData.date), "MMM d, yyyy") : "Pick a date"} {/* Changed from "PPP" */}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={formData.date ? new Date(
-                      Number(formData.date.split('-')[0]),
-                      Number(formData.date.split('-')[1]) - 1,
-                      Number(formData.date.split('-')[2])
-                    ) : undefined}
-                    onSelect={(date) => {
-                      if (date && isDateValid(date)) {
-                        // Store as local date string
-                        const year = date.getFullYear();
-                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                        const day = date.getDate().toString().padStart(2, '0');
-                        setFormData({...formData, date: `${year}-${month}-${day}`, time: ""});
-                      } else if (date) {
-                        toast({
-                          title: "Invalid Date",
-                          description: `Appointments can only be booked up to ${settings.advanceBookingDays} days in advance.`,
-                          variant: "destructive"
-                        });
-                      }
-                    }}
-                    initialFocus
-                    disabled={(date) => !isDateValid(date)}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Time</Label>
-              <Select 
-                value={formData.time}
-                onValueChange={(time) => setFormData({...formData, time})}
-                disabled={settingsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={settingsLoading ? "Loading..." : "Select time"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {getAvailableSlots().map((time) => (
-                    <SelectItem key={time} value={time}>
-                      {time}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Date field - full width */}
+          <div className="space-y-2">
+            <Label>Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !formData.date && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {formData.date ? format(new Date(formData.date), "MMM d, yyyy") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={formData.date ? new Date(
+                    Number(formData.date.split('-')[0]),
+                    Number(formData.date.split('-')[1]) - 1,
+                    Number(formData.date.split('-')[2])
+                  ) : undefined}
+                  onSelect={(date) => {
+                    if (date && isDateValid(date)) {
+                      // Store as local date string
+                      const year = date.getFullYear();
+                      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                      const day = date.getDate().toString().padStart(2, '0');
+                      setFormData({...formData, date: `${year}-${month}-${day}`, time: ""});
+                    } else if (date) {
+                      toast({
+                        title: "Invalid Date",
+                        description: `Appointments can only be booked up to ${settings.advanceBookingDays} days in advance.`,
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                  initialFocus
+                  disabled={(date) => !isDateValid(date)}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Doctor field - full width with proper text handling */}
+          <div className="space-y-2">
+            <Label>Doctor</Label>
+            <Select 
+              value={formData.doctorId} 
+              onValueChange={(doctorId) => {
+                const selectedDoctor = availableDoctors.find(d => d.id.toString() === doctorId);
+                setFormData({
+                  ...formData, 
+                  doctorId, 
+                  doctorName: selectedDoctor?.name || "",
+                  time: "" // Reset time when doctor changes
+                });
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select doctor">
+                  {formData.doctorId && (() => {
+                    const selectedDoctor = availableDoctors.find(d => d.id.toString() === formData.doctorId);
+                    return selectedDoctor ? (
+                      <div className="flex flex-col items-start text-left">
+                        <span className="font-medium truncate">{selectedDoctor.name}</span>
+                        <span className="text-xs text-gray-500 truncate">
+                          {selectedDoctor.specialization}
+                          {selectedDoctor.qualification && ` • ${selectedDoctor.qualification}`}
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="max-w-[400px]">
+                {availableDoctors.map((doctor) => (
+                  <SelectItem key={doctor.id} value={doctor.id.toString()} className="py-3">
+                    <div className="flex flex-col items-start w-full">
+                      <span className="font-medium text-sm">{doctor.name}</span>
+                      <span className="text-xs text-gray-500 mt-1">
+                        {doctor.specialization}
+                        {doctor.qualification && ` • ${doctor.qualification}`}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -313,6 +436,46 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
                 </SelectContent>
               </Select>
             </div>
+            
+            <div className="space-y-2">
+              <Label>Time</Label>
+              <Select 
+                value={formData.time}
+                onValueChange={(time) => setFormData({...formData, time})}
+                disabled={settingsLoading || !formData.doctorId || !formData.date}
+              >
+                <SelectTrigger className={cn(
+                  formData.doctorId && formData.date && getAvailableSlots().length === 0 && 
+                  "border-orange-300 bg-orange-50"
+                )}>
+                  <SelectValue placeholder={
+                    !formData.doctorId ? "Select doctor first" :
+                    !formData.date ? "Select date first" :
+                    settingsLoading ? "Loading..." :
+                    formData.doctorId && formData.date && getAvailableSlots().length === 0 ? "No available slots" :
+                    "Select time"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableSlots().length > 0 ? (
+                    getAvailableSlots().map((time) => (
+                      <SelectItem key={time} value={time}>
+                        {time}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="px-2 py-1.5 text-sm text-gray-500 text-center">
+                      No available time slots for this doctor
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+              {formData.doctorId && formData.date && getAvailableSlots().length === 0 && (
+                <p className="text-xs text-orange-600">
+                  All time slots are booked for this doctor on the selected date. Try a different date or doctor.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -327,10 +490,20 @@ const ScheduleDialog = ({ patient, trigger }: ScheduleDialogProps) => {
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
+            <Button type="button" variant="outline" onClick={handleCancel}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading || !formData.date || !formData.time}>
+            <Button 
+              type="submit" 
+              disabled={
+                isLoading || 
+                !formData.date || 
+                !formData.time || 
+                !formData.doctorId || 
+                !formData.type ||
+                getAvailableSlots().length === 0
+              }
+            >
               {isLoading ? "Scheduling..." : "Schedule"}
             </Button>
           </div>

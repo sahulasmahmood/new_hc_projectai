@@ -253,33 +253,50 @@ model MedicalReport {
 }
 
 model Staff {
-  id                 Int         @id @default(autoincrement())
-  employeeId         String?     @unique @db.VarChar(50) // Auto-generated employee ID
-  name               String      @db.VarChar(100)
-  role               String      @db.VarChar(50)
-  gender             String?     @db.VarChar(10)
+  id                 Int               @id @default(autoincrement())
+  employeeId         String?           @unique @db.VarChar(50) // Auto-generated employee ID
+  name               String            @db.VarChar(100)
+  role               String            @db.VarChar(50)
+  gender             String?           @db.VarChar(10)
   dateOfBirth        DateTime?
   qualification      String?
-  registrationNumber String?     @db.VarChar(100) // Doctor's registration number
+  registrationNumber String?           @db.VarChar(100) // Doctor's registration number
   experience         String?
-  phone              String?     @db.VarChar(20)
-  email              String?     @db.VarChar(100)
+  phone              String?           @db.VarChar(20)
+  email              String?           @db.VarChar(100)
   dateOfHiring       DateTime?
-  status             String      @default("On Duty") @db.VarChar(20)
+  status             String            @default("On Duty") @db.VarChar(20)
   shiftId            Int? // Reference to Shift model
-  weekOff            String?     @db.VarChar(20) // Day of the week
+  weekOff            String?           @db.VarChar(20) // Day of the week
   consultationFee    String?
   digitalSignature   String? // Path to digital signature image or base64 encoded signature
   documents          String[] // Array of document paths
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
   departmentId       Int?
-  department         Department? @relation(fields: [departmentId], references: [id])
-  shiftTime          Shift?      @relation(fields: [shiftId], references: [id])
+  department         Department?       @relation(fields: [departmentId], references: [id])
+  shiftTime          Shift?            @relation(fields: [shiftId], references: [id])
+  statusLogs         StaffStatusLog[] // Relation to status change logs
 
   @@index([departmentId])
   @@index([shiftId])
   @@index([role])
+}
+
+model StaffStatusLog {
+  id             Int      @id @default(autoincrement())
+  staffId        Int
+  staff          Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  previousStatus String?  @db.VarChar(50)
+  newStatus      String   @db.VarChar(50)
+  changeType     String   @db.VarChar(20) // 'automatic' or 'manual'
+  changedBy      String?  @db.VarChar(100) // User who made the change (null for automatic)
+  reason         String?  @db.Text // Reason for manual changes
+  timestamp      DateTime @default(now())
+
+  @@index([staffId])
+  @@index([timestamp])
+  @@index([changeType])
 }
 
 model Department {
@@ -405,18 +422,33 @@ model Bill {
   @@index([prescriptionId])
 }
 
+model GstCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // e.g., "Medicine", "Cosmetic", "Lab Test"
+  description String? // Optional description
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  gstRates GstRate[]
+}
+
 model GstRate {
   id          Int      @id @default(autoincrement())
   name        String   @unique // e.g., "Medicine GST", "Cosmetic GST", "Lab Test GST"
   rate        Float // GST percentage (e.g., 5, 12, 18, 28)
   description String? // Optional description
-  category    String? // e.g., "medicine", "cosmetic", "lab", "service"
+  categoryId  Int? // Reference to GstCategory
+  category    GstCategory? @relation(fields: [categoryId], references: [id])
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
   billItems BillItem[]
+
+  @@index([categoryId])
 }
 
 model BillItem {

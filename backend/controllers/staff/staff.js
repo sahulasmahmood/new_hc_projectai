@@ -1,5 +1,5 @@
 const { PrismaClient } = require('../../generated/prisma');
-const { ensureRoleExists } = require('../../utils/initializeDefaultRoles');
+const { ensureRoleExists } = require('../../utils/initializeDefaults');
 const prisma = new PrismaClient();
 
 // GET all staff members with optional search and filter

@@ -6,7 +6,12 @@ const {
   createGstRate,
   updateGstRate,
   deleteGstRate,
-  toggleGstRateStatus
+  toggleGstRateStatus,
+  getGstCategories,
+  createGstCategory,
+  updateGstCategory,
+  deleteGstCategory,
+  restoreGstCategory
 } = require('../controllers/gst');
 
 // Get all GST rates
@@ -26,5 +31,12 @@ router.delete('/:id', deleteGstRate);
 
 // Toggle GST rate active status
 router.patch('/:id/toggle-status', toggleGstRateStatus);
+
+// GST Categories routes
+router.get('/categories', getGstCategories);
+router.post('/categories', createGstCategory);
+router.put('/categories/:id', updateGstCategory);
+router.delete('/categories/:id', deleteGstCategory);
+router.patch('/categories/:id/restore', restoreGstCategory);
 
 module.exports = router;

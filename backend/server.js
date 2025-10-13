@@ -15,9 +15,8 @@ const {
   onSmartAppointmentSuggestions,
   onWaitlistManagement
 } = require('./inngest/functions/appointment-automation');
-const { initializeDefaultRoles } = require('./utils/initializeDefaultRoles');
-const { initializeDefaultDepartments } = require('./utils/initializeDefaultDepartments');
-const { initializeDefaultVitalsSettings } = require('./utils/initializeDefaultVitalsSettings');
+const { initializeDefaultsOnce } = require('./utils/initializeDefaults');
+const { startStatusUpdateJob } = require('./jobs/updateStaffStatus');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,12 +55,11 @@ app.use((err, req, res, next) => {
 });
 
 // Initialize default roles, departments, and vitals settings on startup
-Promise.all([
-  initializeDefaultRoles(),
-  initializeDefaultDepartments(),
-  initializeDefaultVitalsSettings()
-]).then(() => {
-  console.log('Default roles, departments, and vitals settings initialized');
+// Initialize defaults only once (on fresh database)
+initializeDefaultsOnce().then((result) => {
+  if (result.skipped) {
+    console.log('💡 Tip: Manage roles, departments, and categories through the admin UI');
+  }
 }).catch(err => {
   console.error('Failed to initialize defaults:', err);
 });
@@ -69,4 +67,8 @@ Promise.all([
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  
+  // Start staff status update job
+  startStatusUpdateJob();
+  console.log('✅ Staff status tracking job started');
 });
