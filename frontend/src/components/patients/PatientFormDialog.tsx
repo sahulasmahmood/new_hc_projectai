@@ -258,30 +258,46 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
     setIsLoading(true);
 
     try {
-      // Prepare data for API
-      const apiData = {
-        ...formData,
-        age: parseInt(formData.age),
-        // Only split allergies if it's a string, otherwise keep as is
-        allergies: typeof formData.allergies === 'string' 
+      // Prepare data for API - filter out empty values for FormData
+      const apiData: Record<string, any> = {};
+      
+      // Only add non-empty values
+      if (formData.name) apiData.name = formData.name;
+      if (formData.age) apiData.age = parseInt(formData.age);
+      if (formData.gender) apiData.gender = formData.gender;
+      if (formData.phone) apiData.phone = formData.phone;
+      if (formData.phoneRelationship) apiData.phoneRelationship = formData.phoneRelationship;
+      if (formData.email) apiData.email = formData.email;
+      if (formData.condition) apiData.condition = formData.condition;
+      if (formData.address) apiData.address = formData.address;
+      if (formData.emergencyContact) apiData.emergencyContact = formData.emergencyContact;
+      if (formData.emergencyPhone) apiData.emergencyPhone = formData.emergencyPhone;
+      
+      // Handle allergies
+      if (formData.allergies) {
+        apiData.allergies = typeof formData.allergies === 'string' 
           ? formData.allergies.split(',').map(a => a.trim()).filter(Boolean)
-          : formData.allergies,
-        // Include emergency contacts (with auto-added one if applicable)
-        emergencyContacts: finalEmergencyContacts
-      };
+          : formData.allergies;
+      }
+      
+      // Include emergency contacts
+      apiData.emergencyContacts = finalEmergencyContacts;
 
       let response;
       if (patient) {
         // Update existing patient with optional multiple file uploads
         const form = new FormData();
         Object.entries(apiData).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === '') return; // Skip empty values
           if (key === 'emergencyContacts') {
             // Send emergency contacts as JSON string
             form.append(key, JSON.stringify(value));
           } else if (Array.isArray(value)) {
-            value.forEach((v, i) => form.append(`${key}[${i}]`, v));
+            if (value.length > 0) {
+              value.forEach((v, i) => form.append(`${key}[${i}]`, v));
+            }
           } else {
-            form.append(key, value as string);
+            form.append(key, String(value));
           }
         });
         pendingReports.forEach((report, idx) => {
@@ -302,13 +318,16 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         // Create new patient with multiple file uploads
         const form = new FormData();
         Object.entries(apiData).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === '') return; // Skip empty values
           if (key === 'emergencyContacts') {
             // Send emergency contacts as JSON string
             form.append(key, JSON.stringify(value));
           } else if (Array.isArray(value)) {
-            value.forEach((v, i) => form.append(`${key}[${i}]`, v));
+            if (value.length > 0) {
+              value.forEach((v, i) => form.append(`${key}[${i}]`, v));
+            }
           } else {
-            form.append(key, value as string);
+            form.append(key, String(value));
           }
         });
         pendingReports.forEach((report, idx) => {
