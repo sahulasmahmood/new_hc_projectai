@@ -66,7 +66,7 @@ const initialFormData = {
   experience: "",
   phone: "",
   email: "",
-  status: "",
+  // status removed - now managed automatically
   shift: "",
   weekOff: "",
   consultationFee: "",
@@ -231,7 +231,7 @@ const StaffEditDialog = ({
       const submitData = {
         ...formData,
         departmentId: formData.departmentId,
-        shiftId: formData.shiftId || null,
+        shiftId: formData.shiftId === null ? null : formData.shiftId,
         dateOfBirth: formData.dateOfBirth || null,
         dateOfHiring: formData.dateOfHiring || null,
       };
@@ -396,23 +396,8 @@ const StaffEditDialog = ({
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select
-                    value={formData.status || undefined}
-                    onValueChange={(value) => handleChange("status", value === "none" ? "" : value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="On Duty">On Duty</SelectItem>
-                      <SelectItem value="Off Duty">Off Duty</SelectItem>
-                      <SelectItem value="Break">Break</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Status is now managed automatically based on shifts */}
+                {/* Use Override Status button on staff card for manual changes */}
 
                 <div className="space-y-2">
                   <Label htmlFor="gender">Gender</Label>
@@ -434,11 +419,11 @@ const StaffEditDialog = ({
                 <div className="space-y-2">
                   <Label htmlFor="shift">Shift</Label>
                   <Select
-                    value={formData.shiftId?.toString() || undefined}
+                    value={formData.shiftId?.toString() || "none"}
                     onValueChange={(value) =>
                       handleChange(
                         "shiftId",
-                        value === "none" ? undefined : parseInt(value)
+                        value === "none" ? null : parseInt(value)
                       )
                     }
                   >

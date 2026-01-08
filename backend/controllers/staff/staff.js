@@ -172,7 +172,7 @@ const createStaff = async (req, res) => {
         experience,
         phone,
         email,
-        status: status || 'On Duty',
+        status: 'Off Duty', // Default status, will be updated automatically based on shift
         weekOff,
         consultationFee,
         digitalSignature
@@ -275,6 +275,8 @@ const updateStaff = async (req, res) => {
         } : undefined,
         shiftTime: shiftId ? {
           connect: { id: parseInt(shiftId) }
+        } : shiftId === null ? {
+          disconnect: true
         } : undefined,
         gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
@@ -284,7 +286,7 @@ const updateStaff = async (req, res) => {
         experience,
         phone,
         email,
-        status,
+        // status removed - managed automatically via status tracking system
         weekOff,
         consultationFee,
         digitalSignature

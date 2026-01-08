@@ -40,6 +40,9 @@ import { StaffMember } from "@/types/staff";
 import StaffDetailsDialog from "@/components/staff/StaffDetailsDialog";
 import StaffEditDialog from "@/components/staff/StaffEditDialog";
 import RolesResponsibility from "@/components/staff/RolesResponsibility";
+import StaffStatusBadge from "@/components/staff/StaffStatusBadge";
+import StatusOverrideDialog from "@/components/staff/StatusOverrideDialog";
+import StaffStatusHistory from "@/components/staff/StaffStatusHistory";
 import { useToast } from "@/hooks/use-toast";
 
 const Staff = () => {
@@ -57,6 +60,10 @@ const Staff = () => {
   const [departments, setDepartments] = useState<{id: number, name: string}[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(6); // 2x3 grid for better layout
+  const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
+  const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
+  const [staffForStatusAction, setStaffForStatusAction] = useState<StaffMember | null>(null);
+  const [statusSummary, setStatusSummary] = useState<Record<string, number>>({});
 
 
 
@@ -77,9 +84,19 @@ const Staff = () => {
     }
   }, [toast]);
 
+  const fetchStatusSummary = useCallback(async () => {
+    try {
+      const response = await api.get("/staff/status-summary");
+      setStatusSummary(response.data.summary || {});
+    } catch (error) {
+      console.error("Error fetching status summary:", error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStaffMembers();
-  }, [fetchStaffMembers]);
+    fetchStatusSummary();
+  }, [fetchStaffMembers, fetchStatusSummary]);
 
   // Fetch departments from new API
   useEffect(() => {
@@ -200,7 +217,7 @@ const Staff = () => {
         <TabsContent value="staff" className="space-y-6">
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-900">
@@ -212,30 +229,33 @@ const Staff = () => {
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-green-600">
-              {staffMembers.filter((s) => s.status === "On Duty").length}
+              {statusSummary["On Duty"] || 0}
             </div>
             <div className="text-sm text-gray-600">On Duty</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">
-              {staffMembers.filter((s) => 
-                s.role.toLowerCase().includes("doctor") || 
-                s.role.toLowerCase().includes("dr.")
-              ).length}
+            <div className="text-2xl font-bold text-gray-600">
+              {statusSummary["Off Duty"] || 0}
             </div>
-            <div className="text-sm text-gray-600">Doctors</div>
+            <div className="text-sm text-gray-600">Off Duty</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-purple-600">
-              {staffMembers.filter((s) => 
-                s.role.toLowerCase().includes("nurse")
-              ).length}
+            <div className="text-2xl font-bold text-yellow-600">
+              {statusSummary["On Break"] || 0}
             </div>
-            <div className="text-sm text-gray-600">Nurses</div>
+            <div className="text-sm text-gray-600">On Break</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {statusSummary["On Leave"] || 0}
+            </div>
+            <div className="text-sm text-gray-600">On Leave</div>
           </CardContent>
         </Card>
       </div>
@@ -341,9 +361,7 @@ const Staff = () => {
                     <p className="text-sm text-gray-600">{member.role}</p>
                   </div>
                 </div>
-                <Badge className={getStatusColor(member.status)}>
-                  {member.status}
-                </Badge>
+                <StaffStatusBadge status={member.status} size="sm" />
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -358,15 +376,10 @@ const Staff = () => {
                   <MapPin className="h-4 w-4 text-gray-500" />
                   <span>{member.department?.name || "No Department"}</span>
                 </div>
-                {member.shiftTime ? (
+                {member.shiftTime && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="h-4 w-4 text-gray-500" />
                     <span>{member.shiftTime.name} ({formatTimeTo12Hour(member.shiftTime.startTime)} - {formatTimeTo12Hour(member.shiftTime.endTime)})</span>
-                  </div>
-                ) : member.shift && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Clock className="h-4 w-4 text-gray-500" />
-                    <span>{member.shift} Shift</span>
                   </div>
                 )}
                 {member.phone && (
@@ -404,31 +417,60 @@ const Staff = () => {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-4">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedStaff(member);
-                    setIsDetailsOpen(true);
-                  }}
-                >
-                  View Details
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setStaffToEdit(member);
-                    setIsEditOpen(true);
-                  }}
-                >
-                  Edit
-                </Button>
+              <div className="flex flex-col gap-2 pt-4">
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedStaff(member);
+                      setIsDetailsOpen(true);
+                    }}
+                  >
+                    View Details
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStaffToEdit(member);
+                      setIsEditOpen(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStaffForStatusAction(member);
+                      setIsOverrideDialogOpen(true);
+                    }}
+                  >
+                    <Clock className="h-3 w-3 mr-1" />
+                    Override Status
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStaffForStatusAction(member);
+                      setIsHistoryDialogOpen(true);
+                    }}
+                  >
+                    History
+                  </Button>
+                </div>
               </div>
               </CardContent>
             </Card>
@@ -528,6 +570,37 @@ const Staff = () => {
           setIsAddModalOpen(false);
           fetchStaffMembers();
         }}
+      />
+
+      {/* Status Override Dialog */}
+      <StatusOverrideDialog
+        isOpen={isOverrideDialogOpen}
+        onClose={() => {
+          setIsOverrideDialogOpen(false);
+          setStaffForStatusAction(null);
+        }}
+        staffId={staffForStatusAction?.id || 0}
+        staffName={staffForStatusAction?.name || ""}
+        currentStatus={staffForStatusAction?.status || ""}
+        onStatusUpdated={() => {
+          fetchStaffMembers();
+          fetchStatusSummary();
+          toast({
+            title: "Success",
+            description: "Staff status updated successfully",
+          });
+        }}
+      />
+
+      {/* Status History Dialog */}
+      <StaffStatusHistory
+        isOpen={isHistoryDialogOpen}
+        onClose={() => {
+          setIsHistoryDialogOpen(false);
+          setStaffForStatusAction(null);
+        }}
+        staffId={staffForStatusAction?.id || 0}
+        staffName={staffForStatusAction?.name || ""}
       />
         </TabsContent>
 
