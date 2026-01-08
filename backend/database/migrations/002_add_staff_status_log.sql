@@ -22,7 +22,13 @@ CREATE INDEX IF NOT EXISTS "idx_staff_status_log_staffId" ON "StaffStatusLog"("s
 CREATE INDEX IF NOT EXISTS "idx_staff_status_log_timestamp" ON "StaffStatusLog"("timestamp");
 CREATE INDEX IF NOT EXISTS "idx_staff_status_log_changeType" ON "StaffStatusLog"("changeType");
 
+-- Composite index for cleanup operations (performance optimization)
+CREATE INDEX IF NOT EXISTS "idx_staff_status_log_cleanup" ON "StaffStatusLog"("timestamp", "changeType");
+
+-- Composite index for staff history queries (performance optimization)
+CREATE INDEX IF NOT EXISTS "idx_staff_status_log_staff_time" ON "StaffStatusLog"("staffId", "timestamp" DESC);
+
 -- Add comment to table
-COMMENT ON TABLE "StaffStatusLog" IS 'Audit log for all staff status changes (automatic and manual)';
+COMMENT ON TABLE "StaffStatusLog" IS 'Audit log for all staff status changes (automatic and manual) - optimized for large scale';
 COMMENT ON COLUMN "StaffStatusLog"."changeType" IS 'Type of change: automatic (system) or manual (user)';
 COMMENT ON COLUMN "StaffStatusLog"."changedBy" IS 'User who made the change (null for automatic changes)';

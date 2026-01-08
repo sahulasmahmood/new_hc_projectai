@@ -2,22 +2,28 @@ const {
   overrideStaffStatus,
   getStatusHistory,
   getStatusSummary,
-  updateStaffStatusAutomatically
+  updateStaffStatusAutomatically,
+  getStatusStatistics,
+  cleanupOldStatusLogs,
+  getGraceInfo
 } = require('../../services/staffStatusService');
 
 /**
  * GET /api/staff/:id/status-history
- * Get status change history for a staff member
+ * Get status change history for a staff member with date filtering
  */
 const getStaffStatusHistory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { limit } = req.query;
+    const { limit, startDate, endDate } = req.query;
 
-    const history = await getStatusHistory(
-      parseInt(id),
-      limit ? parseInt(limit) : 50
-    );
+    const options = {
+      limit: limit ? parseInt(limit) : 50,
+      startDate,
+      endDate
+    };
+
+    const history = await getStatusHistory(parseInt(id), options);
 
     res.json({
       success: true,
@@ -131,9 +137,79 @@ const triggerAutoUpdate = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/staff/status-statistics
+ * Get status tracking statistics for monitoring
+ */
+const getStaffStatusStatistics = async (req, res) => {
+  try {
+    const stats = await getStatusStatistics();
+
+    res.json({
+      success: true,
+      statistics: stats
+    });
+  } catch (error) {
+    console.error('Error fetching status statistics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch status statistics'
+    });
+  }
+};
+
+/**
+ * POST /api/staff/cleanup-logs
+ * Manually trigger cleanup of old status logs
+ */
+const triggerLogCleanup = async (req, res) => {
+  try {
+    const { retentionDays = 180 } = req.body;
+
+    const result = await cleanupOldStatusLogs(retentionDays);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error triggering log cleanup:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to cleanup logs'
+    });
+  }
+};
+
+/**
+ * GET /api/staff/:id/grace-info
+ * Get grace period information for a staff member
+ */
+const getStaffGraceInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const graceInfo = await getGraceInfo(parseInt(id));
+
+    res.json({
+      success: true,
+      ...graceInfo
+    });
+  } catch (error) {
+    console.error('Error fetching grace info:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch grace info'
+    });
+  }
+};
+
 module.exports = {
   getStaffStatusHistory,
   overrideStatus,
   getStaffStatusSummary,
-  triggerAutoUpdate
+  triggerAutoUpdate,
+  getStaffStatusStatistics,
+  triggerLogCleanup,
+  getStaffGraceInfo
 };

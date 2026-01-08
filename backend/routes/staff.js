@@ -22,7 +22,10 @@ const {
   getStaffStatusHistory,
   overrideStatus,
   getStaffStatusSummary,
-  triggerAutoUpdate
+  triggerAutoUpdate,
+  getStaffStatusStatistics,
+  triggerLogCleanup,
+  getStaffGraceInfo
 } = require('../controllers/staff/staffStatus');
 
 // Roles and Permissions Routes (must come before /:id routes)
@@ -33,6 +36,8 @@ router.delete('/roles-permissions', deleteRolePermission);
 
 // Status tracking routes (must come before /:id routes)
 router.get('/status-summary', getStaffStatusSummary);
+router.get('/status-statistics', getStaffStatusStatistics);
+router.post('/cleanup-logs', triggerLogCleanup);
 
 // Dropdown data routes (must come before /:id routes)
 router.get('/departments', getDepartments);
@@ -49,6 +54,7 @@ router.get('/:id', getStaffById);
 router.get('/:id/status-history', getStaffStatusHistory);
 router.post('/:id/override-status', overrideStatus);
 router.post('/:id/update-status-auto', triggerAutoUpdate);
+router.get('/:id/grace-info', getStaffGraceInfo);
 
 // POST create new staff member
 router.post('/', createStaff);
