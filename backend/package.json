@@ -5,6 +5,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate",
     "inngest-dev": "npx inngest-cli@latest dev",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
