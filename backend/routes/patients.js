@@ -7,15 +7,23 @@ const {
   updatePatient,
   deletePatient,
   updateABHAStatus,
-  getPatientByPhone
+  getPatientByPhone,
+  getPatientByVisibleId,
+  getActiveConsultations
 } = require('../controllers/patients/patients');
 const upload = require('../utils/upload');
+
+// Debug: Get active consultations
+router.get('/debug/active-consultations', getActiveConsultations);
 
 // Get all patients with optional search
 router.get('/', getAllPatients);
 
 // Get patient by phone
 router.get('/search/by-phone', getPatientByPhone);
+
+// Get patient by visible ID
+router.get('/search/by-id', getPatientByVisibleId);
 
 // Get patient by ID
 router.get('/:id', getPatientById);

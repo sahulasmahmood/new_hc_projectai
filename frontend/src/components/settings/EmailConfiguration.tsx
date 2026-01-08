@@ -181,7 +181,24 @@ const EmailConfiguration: React.FC = () => {
         setLoading(true);
         const response = await api.get("/settings/email-configuration");
         if (response.data.success && response.data.emailConfig) {
-          setFormData(response.data.emailConfig);
+          // Only set form data if there's actual data, otherwise keep empty strings
+          const config = response.data.emailConfig;
+          setFormData({
+            smtpPort: config.smtpPort || "",
+            smtpUsername: config.smtpUsername || "",
+            smtpPassword: config.smtpPassword || "",
+            senderEmail: config.senderEmail || "",
+            smtpHost: config.smtpHost || "",
+          });
+        } else {
+          // Explicitly set empty values if no config exists
+          setFormData({
+            smtpPort: "",
+            smtpUsername: "",
+            smtpPassword: "",
+            senderEmail: "",
+            smtpHost: "",
+          });
         }
       } catch (err: unknown) {
         if (err instanceof Error) {
@@ -189,6 +206,14 @@ const EmailConfiguration: React.FC = () => {
         } else {
           setError("Failed to load email configuration");
         }
+        // Set empty values on error as well
+        setFormData({
+          smtpPort: "",
+          smtpUsername: "",
+          smtpPassword: "",
+          senderEmail: "",
+          smtpHost: "",
+        });
       } finally {
         setLoading(false);
       }
@@ -321,7 +346,7 @@ const EmailConfiguration: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
           <div className="space-y-4">
             <div className="flex flex-col md:flex-row md:items-center gap-4">
               <Label className="w-full md:w-1/2">Email Provider</Label>
@@ -346,47 +371,62 @@ const EmailConfiguration: React.FC = () => {
                 <Label htmlFor="smtpHost">SMTP Host</Label>
                 <Input
                   id="smtpHost"
+                  name="smtp-host"
                   value={formData.smtpHost}
                   onChange={handleChange}
                   placeholder="smtp.gmail.com"
+                  autoComplete="off"
+                  data-form-type="other"
                 />
               </div>
               <div>
                 <Label htmlFor="smtpPort">SMTP Port</Label>
                 <Input
                   id="smtpPort"
+                  name="smtp-port"
                   value={formData.smtpPort}
                   onChange={handleChange}
                   placeholder="587"
                   type="number"
+                  autoComplete="off"
+                  data-form-type="other"
                 />
               </div>
               <div>
                 <Label htmlFor="smtpUsername">SMTP Username</Label>
                 <Input
                   id="smtpUsername"
+                  name="smtp-username"
                   value={formData.smtpUsername}
                   onChange={handleChange}
                   placeholder="your-email@gmail.com"
+                  autoComplete="off"
+                  data-form-type="other"
                 />
               </div>
               <div>
                 <Label htmlFor="smtpPassword">SMTP Password</Label>
                 <Input
                   id="smtpPassword"
+                  name="smtp-password"
                   value={formData.smtpPassword}
                   onChange={handleChange}
                   type="password"
                   placeholder="Enter SMTP Password"
+                  autoComplete="new-password"
+                  data-form-type="other"
                 />
               </div>
               <div>
                 <Label htmlFor="senderEmail">Sender Email</Label>
                 <Input
                   id="senderEmail"
+                  name="sender-email"
                   value={formData.senderEmail}
                   onChange={handleChange}
                   placeholder="noreply@example.com"
+                  autoComplete="off"
+                  data-form-type="other"
                 />
               </div>
             </div>

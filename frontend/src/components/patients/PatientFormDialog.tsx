@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, User, Upload, FileText, X, File, Image, FileImage } from "lucide-react";
+import { Plus, User, Upload, FileText, X, File, Image, FileImage, AlertTriangle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
 import { useRef } from "react";
 
@@ -26,6 +27,15 @@ interface Patient {
   abhaVerified?: boolean;
   status: string;
   medicalReportCount?: number; // Use count from backend
+  emergencyContacts?: EmergencyContact[]; // Add emergency contacts
+}
+
+interface EmergencyContact {
+  id?: number;
+  name: string;
+  relationship: string;
+  phone: string;
+  isPrimary?: boolean;
 }
 
 interface PatientFormData {
@@ -33,12 +43,14 @@ interface PatientFormData {
   age: string;
   gender: string;
   phone: string;
+  phoneRelationship: string;
   email: string;
   condition: string;
   allergies: string;
   emergencyContact: string;
   emergencyPhone: string;
   address: string;
+  emergencyContacts: EmergencyContact[];
 }
 
 interface PatientFormDialogProps {
@@ -53,17 +65,29 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
   const [isDragOver, setIsDragOver] = useState(false);
   const { toast } = useToast();
   
+  // Initialize form data - will be populated when dialog opens
   const [formData, setFormData] = useState<PatientFormData>({
-    name: patient?.name || "",
-    age: patient?.age?.toString() || "",
-    gender: patient?.gender || "",
-    phone: patient?.phone || "",
-    email: patient?.email || "",
-    condition: patient?.condition || "",
-    allergies: patient?.allergies?.join(", ") || "",
-    emergencyContact: patient?.emergencyContact || "",
-    emergencyPhone: patient?.emergencyPhone || "",
-    address: patient?.address || ""
+    name: "",
+    age: "",
+    gender: "",
+    phone: "",
+    phoneRelationship: "",
+    email: "",
+    condition: "",
+    allergies: "",
+    emergencyContact: "",
+    emergencyPhone: "",
+    address: "",
+    emergencyContacts: []
+  });
+
+  const [phoneExists, setPhoneExists] = useState(false);
+  const [existingPatients, setExistingPatients] = useState<any[]>([]);
+
+  const [newEmergencyContact, setNewEmergencyContact] = useState<EmergencyContact>({ 
+    name: "", 
+    relationship: "", 
+    phone: "" 
   });
 
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
@@ -196,6 +220,41 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
+    
+    // Check if user has a file selected but not added to pending reports
+    if (currentReportFile && pendingReports.length === 0) {
+      toast({
+        title: "File Not Added",
+        description: "You have a file selected but not added. Click 'Add Report' to include it, or remove the file to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Check if user has a file selected along with pending reports
+    if (currentReportFile && pendingReports.length > 0) {
+      toast({
+        title: "File Not Added",
+        description: "You have an additional file selected. Click 'Add Report' to include it, or remove the file to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Auto-add emergency contact if filled but not added
+    let finalEmergencyContacts = [...formData.emergencyContacts];
+    if (newEmergencyContact.name.trim() && newEmergencyContact.phone.trim() && /^\d+$/.test(newEmergencyContact.phone.trim())) {
+      finalEmergencyContacts.push({
+        ...newEmergencyContact,
+        phone: newEmergencyContact.phone.trim(),
+        isPrimary: finalEmergencyContacts.length === 0
+      });
+      toast({
+        title: "Emergency Contact Added",
+        description: "Your filled emergency contact has been automatically added.",
+      });
+    }
+    
     setIsLoading(true);
 
     try {
@@ -206,7 +265,9 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         // Only split allergies if it's a string, otherwise keep as is
         allergies: typeof formData.allergies === 'string' 
           ? formData.allergies.split(',').map(a => a.trim()).filter(Boolean)
-          : formData.allergies
+          : formData.allergies,
+        // Include emergency contacts (with auto-added one if applicable)
+        emergencyContacts: finalEmergencyContacts
       };
 
       let response;
@@ -214,7 +275,10 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         // Update existing patient with optional multiple file uploads
         const form = new FormData();
         Object.entries(apiData).forEach(([key, value]) => {
-          if (Array.isArray(value)) {
+          if (key === 'emergencyContacts') {
+            // Send emergency contacts as JSON string
+            form.append(key, JSON.stringify(value));
+          } else if (Array.isArray(value)) {
             value.forEach((v, i) => form.append(`${key}[${i}]`, v));
           } else {
             form.append(key, value as string);
@@ -227,15 +291,21 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         response = await api.put(`/patients/${patient.id}`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
+        const fileMessage = pendingReports.length > 0 
+          ? ` ${pendingReports.length} medical report(s) uploaded.`
+          : '';
         toast({
           title: "Patient Updated",
-          description: `${formData.name} has been updated successfully.`,
+          description: `${formData.name} has been updated successfully.${fileMessage}`,
         });
       } else {
         // Create new patient with multiple file uploads
         const form = new FormData();
         Object.entries(apiData).forEach(([key, value]) => {
-          if (Array.isArray(value)) {
+          if (key === 'emergencyContacts') {
+            // Send emergency contacts as JSON string
+            form.append(key, JSON.stringify(value));
+          } else if (Array.isArray(value)) {
             value.forEach((v, i) => form.append(`${key}[${i}]`, v));
           } else {
             form.append(key, value as string);
@@ -248,18 +318,20 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
         response = await api.post('/patients', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
+        const fileMessage = pendingReports.length > 0 
+          ? ` ${pendingReports.length} medical report(s) uploaded.`
+          : '';
         toast({
           title: "Patient Added",
-          description: `${formData.name} has been added successfully.`,
+          description: `${formData.name} has been added successfully.${fileMessage}`,
         });
       }
       setIsLoading(false);
       setIsOpen(false);
-      setMedicalReport(null);
-      setFilePreview(null);
-      setPendingReports([]);
-      setCurrentReportFile(null);
-      setCurrentReportNote("");
+      // Reset form after successful submission
+      if (!patient) {
+        resetForm();
+      }
       onSuccess?.(); // Trigger refresh of patients list
     } catch (error: Error | unknown) {
       console.error('Error saving patient:', error);
@@ -275,10 +347,45 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
     }
   };
 
+  const checkPhoneExists = async (phone: string) => {
+    if (phone.length === 10 && /^\d{10}$/.test(phone)) {
+      try {
+        const response = await api.get(`/patients/search/by-phone?phone=${phone}`);
+        if (response.data && response.data.length > 0) {
+          // Filter out current patient if editing
+          const others = patient ? response.data.filter((p: any) => p.id !== patient.id) : response.data;
+          if (others.length > 0) {
+            setPhoneExists(true);
+            setExistingPatients(others);
+          } else {
+            setPhoneExists(false);
+            setExistingPatients([]);
+          }
+        } else {
+          setPhoneExists(false);
+          setExistingPatients([]);
+        }
+      } catch (error) {
+        // Phone doesn't exist
+        setPhoneExists(false);
+        setExistingPatients([]);
+      }
+    } else {
+      setPhoneExists(false);
+      setExistingPatients([]);
+    }
+  };
+
   const handleInputChange = (field: keyof PatientFormData, value: string) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
       validateForm(updated);
+      
+      // Check phone number for duplicates
+      if (field === 'phone') {
+        checkPhoneExists(value);
+      }
+      
       return updated;
     });
   };
@@ -295,12 +402,56 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
     return Object.keys(errors).length === 0;
   };
 
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      age: "",
+      gender: "",
+      phone: "",
+      phoneRelationship: "",
+      email: "",
+      condition: "",
+      allergies: "",
+      emergencyContact: "",
+      emergencyPhone: "",
+      address: "",
+      emergencyContacts: []
+    });
+    setNewEmergencyContact({ name: "", relationship: "", phone: "" });
+    setMedicalReport(null);
+    setFilePreview(null);
+    setPendingReports([]);
+    setCurrentReportFile(null);
+    setCurrentReportNote("");
+    setFormErrors({});
+    setPhoneExists(false);
+    setExistingPatients([]);
+  };
+
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (!open) {
-      setMedicalReport(null);
-      setFilePreview(null);
+    if (open) {
+      // Populate form data when opening
+      if (patient) {
+        // Editing existing patient
+        setFormData({
+          name: patient.name || "",
+          age: patient.age?.toString() || "",
+          gender: patient.gender || "",
+          phone: patient.phone || "",
+          phoneRelationship: (patient as any).phoneRelationship || "",
+          email: patient.email || "",
+          condition: patient.condition || "",
+          allergies: patient.allergies?.join(", ") || "",
+          emergencyContact: patient.emergencyContact || "",
+          emergencyPhone: patient.emergencyPhone || "",
+          address: patient.address || "",
+          emergencyContacts: patient.emergencyContacts || []
+        });
+      }
+      // If adding new patient, keep existing form data (don't reset)
     }
+    // Don't reset on close - only reset on explicit cancel or successful submit
   };
 
   return (
@@ -379,6 +530,49 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
             </div>
           </div>
 
+          {/* Phone duplicate warning - outside grid to prevent layout issues */}
+          {phoneExists && existingPatients.length > 0 && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-yellow-800">
+                  This phone number is already used by:
+                </span>
+              </div>
+              <div className="space-y-1 ml-6">
+                {existingPatients.map((p: any) => (
+                  <div key={p.id} className="text-xs text-yellow-700">
+                    • {p.name} ({p.visibleId}) {p.phoneRelationship && `- ${p.phoneRelationship}`}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3">
+                <Label htmlFor="phoneRelationship" className="text-xs text-yellow-800">
+                  Specify relationship (e.g., Father, Mother, Guardian)
+                </Label>
+                <Select 
+                  value={formData.phoneRelationship} 
+                  onValueChange={(value) => handleInputChange("phoneRelationship", value)}
+                >
+                  <SelectTrigger className="mt-1 h-8 text-xs">
+                    <SelectValue placeholder="Select relationship" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Father">Father</SelectItem>
+                    <SelectItem value="Mother">Mother</SelectItem>
+                    <SelectItem value="Guardian">Guardian</SelectItem>
+                    <SelectItem value="Spouse">Spouse</SelectItem>
+                    <SelectItem value="Son">Son</SelectItem>
+                    <SelectItem value="Daughter">Daughter</SelectItem>
+                    <SelectItem value="Brother">Brother</SelectItem>
+                    <SelectItem value="Sister">Sister</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="email">Email Address</Label>
             <Input
@@ -411,26 +605,136 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="emergencyContact">Emergency Contact</Label>
-              <Input
-                id="emergencyContact"
-                value={formData.emergencyContact}
-                onChange={(e) => handleInputChange("emergencyContact", e.target.value)}
-                placeholder="Emergency contact name"
-              />
+          {/* Emergency Contacts Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">Emergency Contacts</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (newEmergencyContact.name.trim() && newEmergencyContact.phone.trim() && /^\d+$/.test(newEmergencyContact.phone.trim())) {
+                    setFormData(prev => ({
+                      ...prev,
+                      emergencyContacts: [...prev.emergencyContacts, {
+                        ...newEmergencyContact,
+                        phone: newEmergencyContact.phone.trim(),
+                        isPrimary: prev.emergencyContacts.length === 0
+                      }]
+                    }));
+                    setNewEmergencyContact({ name: "", relationship: "", phone: "" });
+                  } else {
+                    toast({
+                      title: "Invalid Information",
+                      description: "Please enter valid name, relationship, and numeric phone number.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                disabled={!newEmergencyContact.name.trim() || !newEmergencyContact.phone.trim() || !/^\d+$/.test(newEmergencyContact.phone.trim())}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Contact
+              </Button>
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="emergencyPhone">Emergency Phone</Label>
-              <Input
-                id="emergencyPhone"
-                value={formData.emergencyPhone}
-                onChange={(e) => handleInputChange("emergencyPhone", e.target.value)}
-                placeholder="Emergency phone number"
-              />
+
+            {/* Add New Emergency Contact Form */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Contact Name *</Label>
+                <Input
+                  placeholder="Full name"
+                  value={newEmergencyContact.name}
+                  onChange={(e) => setNewEmergencyContact(prev => ({ ...prev, name: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Relationship</Label>
+                <Select 
+                  value={newEmergencyContact.relationship} 
+                  onValueChange={(value) => setNewEmergencyContact(prev => ({ ...prev, relationship: value }))}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select relationship" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Father">Father</SelectItem>
+                    <SelectItem value="Mother">Mother</SelectItem>
+                    <SelectItem value="Spouse">Spouse</SelectItem>
+                    <SelectItem value="Son">Son</SelectItem>
+                    <SelectItem value="Daughter">Daughter</SelectItem>
+                    <SelectItem value="Brother">Brother</SelectItem>
+                    <SelectItem value="Sister">Sister</SelectItem>
+                    <SelectItem value="Friend">Friend</SelectItem>
+                    <SelectItem value="Guardian">Guardian</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Phone Number *</Label>
+                <Input
+                  placeholder="Numbers only"
+                  value={newEmergencyContact.phone}
+                  onChange={(e) => {
+                    // Only allow numeric input
+                    const value = e.target.value.replace(/\D/g, '');
+                    setNewEmergencyContact(prev => ({ ...prev, phone: value }));
+                  }}
+                  className="h-9"
+                  maxLength={15}
+                />
+              </div>
             </div>
+
+            {/* Existing Emergency Contacts */}
+            {formData.emergencyContacts.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600">Current Emergency Contacts</Label>
+                <div className="space-y-2">
+                  {formData.emergencyContacts.map((contact, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-white rounded-lg border">
+                      {contact.isPrimary && (
+                        <Badge className="bg-blue-100 text-blue-800 text-xs">Primary</Badge>
+                      )}
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="text-sm">
+                          <span className="font-medium text-gray-700">{contact.name}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {contact.relationship || 'No relationship specified'}
+                        </div>
+                        <div className="text-sm font-mono text-gray-800">
+                          {contact.phone}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            emergencyContacts: prev.emergencyContacts.filter((_, i) => i !== index)
+                          }));
+                        }}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {formData.emergencyContacts.length === 0 && (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No emergency contacts added yet. Use the form above to add contacts.
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -520,11 +824,31 @@ const PatientFormDialog = ({ trigger, patient, onSuccess }: PatientFormDialogPro
            )}
          </div>
 
+          {/* Warning for unaddded files */}
+          {currentReportFile && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm text-yellow-800 font-medium">
+                  File selected but not added
+                </span>
+              </div>
+              <p className="text-xs text-yellow-700 mt-1">
+                Click "Add File" to include this file, or "Cancel" to remove it before saving.
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                if (!patient) {
+                  resetForm();
+                }
+                setIsOpen(false);
+              }}
               disabled={isLoading}
             >
               Cancel

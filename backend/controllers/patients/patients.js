@@ -1,5 +1,36 @@
 const { PrismaClient } = require('../../generated/prisma');
+const { getPatientIdPrefix } = require('../../utils/patientIdGenerator');
 const prisma = new PrismaClient();      
+
+// Debug endpoint to check active consultations
+const getActiveConsultations = async (req, res) => {
+  try {
+    const activeAppointments = await prisma.appointment.findMany({
+      where: { status: 'Consultation Started' },
+      include: {
+        patient: {
+          select: { id: true, name: true, phone: true }
+        }
+      }
+    });
+    
+    res.json({
+      count: activeAppointments.length,
+      consultations: activeAppointments.map(apt => ({
+        appointmentId: apt.id,
+        patientId: apt.patientId,
+        patientName: apt.patient?.name || apt.patientName,
+        date: apt.date,
+        time: apt.time,
+        consultationStartTime: apt.consultationStartTime,
+        actualStartTime: apt.actualStartTime
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching active consultations:', error);
+    res.status(500).json({ error: 'Failed to fetch active consultations' });
+  }
+};
 
 // GET all patients with optional search
 const getAllPatients = async (req, res) => {
@@ -28,19 +59,73 @@ const getAllPatients = async (req, res) => {
       include: {
         appointments: {
           orderBy: { date: 'desc' },
-          take: 1
+          take: 5 // Get more appointments to find active consultation
         },
-        medicalReports: true
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
       }
     });
 
-    // Format lastVisit from the most recent appointment
-    const formattedPatients = patients.map(patient => ({
-      ...patient,
-      lastVisit: patient.appointments[0]?.date || null,
-      appointments: undefined, // Remove appointments from response
-      medicalReportCount: patient.medicalReports.length
+    // Format lastVisit from the most recent COMPLETED appointment and find active consultation
+    const formattedPatients = await Promise.all(patients.map(async patient => {
+      const now = new Date();
+      
+      // First check in the loaded appointments
+      let activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+      
+      // If not found in recent appointments, specifically query for active consultation
+      if (!activeConsultation) {
+        activeConsultation = await prisma.appointment.findFirst({
+          where: {
+            patientId: patient.id,
+            status: 'Consultation Started'
+          }
+        });
+      }
+      
+      // Find the most recent completed appointment for lastVisit
+      const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
+      const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
+      
+      // Check for upcoming appointments (today or future) - excluding active consultations
+      const upcomingAppointments = patient.appointments.filter(apt => {
+        const appointmentDate = new Date(apt.date);
+        return appointmentDate >= now.setHours(0, 0, 0, 0) && 
+               ['Confirmed', 'Urgent'].includes(apt.status); // Removed 'Consultation Started' from here
+      });
+      
+      // Add active consultation to upcoming count if it exists (regardless of date)
+      const totalUpcoming = upcomingAppointments.length + (activeConsultation ? 1 : 0);
+      
+      return {
+        ...patient,
+        lastVisit: lastCompletedVisit,
+        activeAppointmentId: activeConsultation?.id || null,
+        consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
+        consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+        activeDoctorName: activeConsultation?.doctorName || null, // Add doctor name for active consultations
+        hasUpcomingAppointments: totalUpcoming > 0,
+        upcomingAppointmentCount: totalUpcoming,
+        appointments: undefined, // Remove appointments from response
+        medicalReportCount: patient.medicalReports.length
+      };
     }));
+
+      // Debug: Log patients with active consultations
+    const patientsWithActiveConsultations = formattedPatients.filter(p => p.consultationStatus === 'active');
+    if (patientsWithActiveConsultations.length > 0) {
+      console.log('Patients with active consultations:', patientsWithActiveConsultations.map(p => ({
+        id: p.id,
+        name: p.name,
+        consultationStatus: p.consultationStatus,
+        activeAppointmentId: p.activeAppointmentId
+      })));
+    }
 
     res.json(formattedPatients);
   } catch (error) {
@@ -58,9 +143,15 @@ const getPatientById = async (req, res) => {
       include: {
         appointments: {
           orderBy: { date: 'desc' },
-          take: 1
+          take: 20 // Get more appointments to find active consultation
         },
-        medicalReports: true
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
       }
     });
 
@@ -68,12 +159,47 @@ const getPatientById = async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    // Find active consultation appointment
+    let activeConsultation = patient.appointments.find(apt => apt.status === 'Consultation Started');
+    
+    // If not found in recent appointments, specifically query for active consultation
+    if (!activeConsultation) {
+      activeConsultation = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          status: 'Consultation Started'
+        }
+      });
+    }
+    
+    // Find the most recent completed appointment for lastVisit
+    const completedAppointments = patient.appointments.filter(apt => apt.status === 'Completed');
+    const lastCompletedVisit = completedAppointments.length > 0 ? completedAppointments[0].date : null;
+    
+    // Check for upcoming appointments (today or future) - excluding active consultations
+    const now = new Date();
+    const upcomingAppointments = patient.appointments.filter(apt => {
+      const appointmentDate = new Date(apt.date);
+      return appointmentDate >= now.setHours(0, 0, 0, 0) && 
+             ['Confirmed', 'Urgent'].includes(apt.status); // Removed 'Consultation Started' from here
+    });
+    
+    // Add active consultation to upcoming count if it exists (regardless of date)
+    const totalUpcoming = upcomingAppointments.length + (activeConsultation ? 1 : 0);
+    
     // Format patient data
     const formattedPatient = {
       ...patient,
-      lastVisit: patient.appointments[0]?.date || null,
-      appointments: undefined,
-      medicalReportCount: patient.medicalReports.length
+      lastVisit: lastCompletedVisit,
+      activeAppointmentId: activeConsultation?.id || null,
+      consultationStatus: activeConsultation ? 'active' : patient.consultationStatus,
+      consultationStartTime: activeConsultation ? activeConsultation.consultationStartTime || activeConsultation.actualStartTime : patient.consultationStartTime,
+      activeDoctorName: activeConsultation?.doctorName || null, // Add doctor name for active consultations
+      hasUpcomingAppointments: totalUpcoming > 0,
+      upcomingAppointmentCount: totalUpcoming,
+      appointments: undefined, // Remove appointments from response
+      medicalReportCount: patient.medicalReports.length,
+      medicalReports: patient.medicalReports // Keep medical reports for consultation
     };
 
     res.json(formattedPatient);
@@ -91,11 +217,13 @@ const createPatient = async (req, res) => {
       age,
       gender,
       phone,
+      phoneRelationship,
       email,
       condition,
       allergies,
       emergencyContact,
       emergencyPhone,
+      emergencyContacts, // New field for multiple emergency contacts
       address,
       abhaId,
       createdFromEmergency = false
@@ -118,8 +246,15 @@ const createPatient = async (req, res) => {
       }
     }
 
-    // Generate visibleId (APL-00001 ... APL-99999, then APL-A-00001 ...)
-    let prefix = "APL";
+    // Generate visibleId (PREFIX-00001 ... PREFIX-99999, then PREFIX-A-00001 ...)
+    let prefix;
+    try {
+      prefix = await getPatientIdPrefix();
+    } catch (error) {
+      return res.status(400).json({
+        error: `Unable to create patient: ${error.message}`,
+      });
+    }
     let letter = null;
     let number = 1;
     // Find the highest existing visibleId with this prefix
@@ -187,6 +322,7 @@ const createPatient = async (req, res) => {
         age: parseInt(age),
         gender,
         phone,
+        phoneRelationship: phoneRelationship || null,
         email,
         condition,
         allergies: processedAllergies,
@@ -198,6 +334,42 @@ const createPatient = async (req, res) => {
         createdFromEmergency
       }
     });
+
+    // Handle multiple emergency contacts
+    let parsedEmergencyContacts = emergencyContacts;
+    
+    // Parse if it's a string (from FormData)
+    if (typeof emergencyContacts === 'string') {
+      try {
+        parsedEmergencyContacts = JSON.parse(emergencyContacts);
+      } catch (e) {
+        console.error('Error parsing emergency contacts:', e);
+        parsedEmergencyContacts = [];
+      }
+    }
+    
+    if (parsedEmergencyContacts && Array.isArray(parsedEmergencyContacts) && parsedEmergencyContacts.length > 0) {
+      const validContacts = parsedEmergencyContacts.filter(contact => 
+        contact.name && contact.name.trim() && 
+        contact.phone && contact.phone.trim() && 
+        /^\d+$/.test(contact.phone.trim()) // Only numeric phone numbers
+      );
+
+      if (validContacts.length > 0) {
+        // Create emergency contacts
+        const contactsData = validContacts.map((contact, index) => ({
+          patientId: patient.id,
+          name: contact.name.trim(),
+          relationship: contact.relationship?.trim() || null,
+          phone: contact.phone.trim(),
+          isPrimary: index === 0 // First contact is primary
+        }));
+
+        await prisma.patientEmergencyContact.createMany({
+          data: contactsData
+        });
+      }
+    }
 
     // Handle multiple file uploads with notes/types
     if (req.files && req.files.length > 0) {
@@ -215,10 +387,18 @@ const createPatient = async (req, res) => {
       }
     }
 
-    // Return patient with report count
+    // Return patient with report count and emergency contacts
     const patientWithReports = await prisma.patient.findUnique({
       where: { id: patient.id },
-      include: { medicalReports: true }
+      include: { 
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
     });
     res.status(201).json({
       ...patientWithReports,
@@ -242,11 +422,13 @@ const updatePatient = async (req, res) => {
       age,
       gender,
       phone,
+      phoneRelationship,
       email,
       condition,
       allergies,
       emergencyContact,
       emergencyPhone,
+      emergencyContacts, // New field for multiple emergency contacts
       address,
       status
     } = req.body;
@@ -267,6 +449,7 @@ const updatePatient = async (req, res) => {
       age: age ? parseInt(age) : undefined,
       gender,
       phone,
+      phoneRelationship: phoneRelationship || null,
       email,
       condition,
       allergies: processedAllergies,
@@ -281,6 +464,48 @@ const updatePatient = async (req, res) => {
       where: { id: parseInt(id) },
       data: updateData
     });
+
+    // Handle multiple emergency contacts update
+    let parsedEmergencyContacts = emergencyContacts;
+    
+    // Parse if it's a string (from FormData)
+    if (typeof emergencyContacts === 'string') {
+      try {
+        parsedEmergencyContacts = JSON.parse(emergencyContacts);
+      } catch (e) {
+        console.error('Error parsing emergency contacts:', e);
+        parsedEmergencyContacts = null;
+      }
+    }
+    
+    if (parsedEmergencyContacts && Array.isArray(parsedEmergencyContacts)) {
+      // Delete existing emergency contacts
+      await prisma.patientEmergencyContact.deleteMany({
+        where: { patientId: parseInt(id) }
+      });
+
+      // Filter and validate new contacts
+      const validContacts = parsedEmergencyContacts.filter(contact => 
+        contact.name && contact.name.trim() && 
+        contact.phone && contact.phone.trim() && 
+        /^\d+$/.test(contact.phone.trim()) // Only numeric phone numbers
+      );
+
+      if (validContacts.length > 0) {
+        // Create new emergency contacts
+        const contactsData = validContacts.map((contact, index) => ({
+          patientId: parseInt(id),
+          name: contact.name.trim(),
+          relationship: contact.relationship?.trim() || null,
+          phone: contact.phone.trim(),
+          isPrimary: index === 0 // First contact is primary
+        }));
+
+        await prisma.patientEmergencyContact.createMany({
+          data: contactsData
+        });
+      }
+    }
 
     // Handle multiple file uploads with notes/types
     if (req.files && req.files.length > 0) {
@@ -297,10 +522,18 @@ const updatePatient = async (req, res) => {
       }
     }
 
-    // Return patient with report count
+    // Return patient with report count and emergency contacts
     const patientWithReports = await prisma.patient.findUnique({
       where: { id: updatedPatient.id },
-      include: { medicalReports: true }
+      include: { 
+        medicalReports: true,
+        emergencyContacts: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
     });
     res.json({
       ...patientWithReports,
@@ -368,6 +601,33 @@ const getPatientByPhone = async (req, res) => {
   res.json(patients);
 };
 
+// Get patient by visible ID
+const getPatientByVisibleId = async (req, res) => {
+  try {
+    const { id } = req.query;
+    if (!id) {
+      return res.status(400).json({ error: "Patient ID required" });
+    }
+
+    const patients = await prisma.patient.findMany({
+      where: {
+        visibleId: {
+          contains: id,
+          mode: 'insensitive'
+        }
+      },
+      orderBy: {
+        visibleId: 'asc'
+      }
+    });
+
+    res.json(patients);
+  } catch (error) {
+    console.error('Error searching patients by ID:', error);
+    res.status(500).json({ error: 'Failed to search patients by ID' });
+  }
+};
+
 module.exports = {
   getAllPatients,
   getPatientById,
@@ -375,5 +635,7 @@ module.exports = {
   updatePatient,
   deletePatient,
   updateABHAStatus,
-  getPatientByPhone
+  getPatientByPhone,
+  getPatientByVisibleId,
+  getActiveConsultations
 };

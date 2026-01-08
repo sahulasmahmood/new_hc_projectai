@@ -7,8 +7,12 @@ const {
   updateAppointment,
   deleteAppointment,
   rescheduleAppointment,
-  swapAppointments
+  swapAppointments,
+  validateConsultationStartTiming,
+  startConsultation,
+  abortConsultation
 } = require('../controllers/appointments/appointments');
+const { checkSlotAvailability } = require('../controllers/appointments/availability');
 
 // Get all appointments
 router.get('/appointments', getAllAppointments);
@@ -30,5 +34,17 @@ router.post('/appointments/swap', swapAppointments);
 
 // Delete appointment
 router.delete('/appointments/:id', deleteAppointment);
+
+// Check slot availability
+router.post('/appointments/check-availability', checkSlotAvailability);
+
+// Validate consultation start timing
+router.get('/appointments/:id/validate-start', validateConsultationStartTiming);
+
+// Start consultation with proper time handling
+router.post('/appointments/:id/start-consultation', startConsultation);
+
+// Abort active consultation
+router.post('/appointments/:id/abort-consultation', abortConsultation);
 
 module.exports = router;

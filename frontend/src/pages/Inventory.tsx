@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Package, Search, Filter, AlertTriangle, Truck, Calendar, TrendingDown, TrendingUp, Edit } from "lucide-react";
+import { Package, Search, Filter, AlertTriangle, Truck, Calendar, TrendingDown, TrendingUp, Edit, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import api from "@/lib/api";
 import InventoryFormDialog from "@/components/inventory/InventoryFormDialog";
@@ -12,6 +12,7 @@ import StockUpdateDialog from "@/components/inventory/StockUpdateDialog";
 import DeleteConfirmDialog from "@/components/inventory/DeleteConfirmDialog";
 import RestockDialog from "@/components/inventory/RestockDialog";
 import InventoryBatchHistoryDialog from "@/components/inventory/InventoryBatchHistoryDialog";
+import InventoryAuditDialog from "@/components/inventory/InventoryAuditDialog";
 
 interface InventoryItem {
   id: number;
@@ -39,12 +40,17 @@ const Inventory = () => {
   const [error, setError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
   const [categories, setCategories] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: ""
+  });
+  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'yesterday' | 'last7days' | 'thismonth' | 'custom'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
-  type FilterType = 'all' | 'lowStock' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
+  type FilterType = 'all' | 'lowStock' | 'expired' | 'expiringSoon' | 'lastRestocked' | 'createdAt';
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [showLowStockModal, setShowLowStockModal] = useState(false);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [showExpiringModal, setShowExpiringModal] = useState(false);
 
   // Fetch categories
@@ -109,9 +115,26 @@ const Inventory = () => {
   };
 
   const lowStockItems = inventory.filter(item => item.currentStock <= item.minStock);
+  
+  const expiredItems = inventory.filter(item => {
+    if (!item.expiryDate) return false;
+    const expiryDate = new Date(item.expiryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiryDate.setHours(0, 0, 0, 0);
+    return expiryDate < today;
+  });
+  
   const expiringItems = inventory.filter(item => {
     if (!item.expiryDate) return false;
     const expiryDate = new Date(item.expiryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiryDate.setHours(0, 0, 0, 0);
+    
+    // Not expired but expiring within 30 days
+    if (expiryDate < today) return false;
+    
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return expiryDate <= thirtyDaysFromNow;
@@ -119,22 +142,43 @@ const Inventory = () => {
 
   const totalValue = inventory.reduce((sum, item) => sum + (item.currentStock * item.pricePerUnit), 0);
 
-  // Filter inventory by lastRestocked date if selectedDate is set
+  // Filter inventory by date range if set
   const filteredInventory = inventory.filter(item => {
     if (filterType === 'all') return true;
     if (filterType === 'lowStock') return item.currentStock <= item.minStock;
+    if (filterType === 'expired') {
+      if (!item.expiryDate) return false;
+      const expiryDate = new Date(item.expiryDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      expiryDate.setHours(0, 0, 0, 0);
+      return expiryDate < today;
+    }
     if (filterType === 'expiringSoon') {
       if (!item.expiryDate) return false;
       const expiryDate = new Date(item.expiryDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      expiryDate.setHours(0, 0, 0, 0);
+      
+      // Not expired but expiring within 30 days
+      if (expiryDate < today) return false;
+      
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
       return expiryDate <= thirtyDaysFromNow;
     }
     if (filterType === 'lastRestocked' || filterType === 'createdAt') {
-      if (!selectedDate) return true;
+      if (!dateRange.startDate && !dateRange.endDate) return true;
       const dateField = filterType === 'lastRestocked' ? item.lastRestocked : item.createdAt;
       if (!dateField) return false;
-      return dateField.split('T')[0] === selectedDate;
+      const itemDate = dateField.split('T')[0];
+      
+      // Check if item date is within the range
+      if (dateRange.startDate && itemDate < dateRange.startDate) return false;
+      if (dateRange.endDate && itemDate > dateRange.endDate) return false;
+      
+      return true;
     }
     return true;
   });
@@ -144,8 +188,58 @@ const Inventory = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentInventory = filteredInventory.slice(indexOfFirstItem, indexOfLastItem);
   const handlePageChange = (page: number) => setCurrentPage(page);
+  // Handle date range filter changes
+  const handleDateRangeChange = (value: string) => {
+    setDateRangeFilter(value as any);
+    
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const last7Days = new Date(today);
+    last7Days.setDate(last7Days.getDate() - 7);
+    
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+    
+    switch (value) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        });
+        break;
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        });
+        break;
+      case 'all':
+      default:
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        });
+        break;
+    }
+  };
+
   // Reset to first page when filter changes
-  useEffect(() => { setCurrentPage(1); }, [selectedDate, selectedCategory, searchQuery, filterType]);
+  useEffect(() => { setCurrentPage(1); }, [dateRange.startDate, dateRange.endDate, selectedCategory, searchQuery, filterType]);
 
   return (
     <div className="p-6 space-y-6">
@@ -154,11 +248,23 @@ const Inventory = () => {
           <Package className="h-8 w-8 text-medical-500" />
           <h1 className="text-3xl font-bold text-gray-900">Inventory Management</h1>
         </div>
-        <InventoryFormDialog onSuccess={fetchInventory} />
+        <div className="flex gap-2">
+          <InventoryAuditDialog 
+            itemId={0} 
+            itemName="All Items"
+            trigger={
+              <Button variant="outline">
+                <History className="h-4 w-4 mr-2" />
+                View All Audit Logs
+              </Button>
+            }
+          />
+          <InventoryFormDialog onSuccess={fetchInventory} />
+        </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-900">{inventory.length}</div>
@@ -171,7 +277,13 @@ const Inventory = () => {
             <div className="text-sm text-gray-600">Low Stock Alerts</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowExpiredModal(true)}>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-800">{expiredItems.length}</div>
+            <div className="text-sm text-gray-600">Expired Items</div>
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowExpiringModal(true)}>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-yellow-600">{expiringItems.length}</div>
             <div className="text-sm text-gray-600">Expiring Soon</div>
@@ -186,8 +298,47 @@ const Inventory = () => {
       </div>
 
       {/* Alerts */}
-      {(lowStockItems.length > 0 || expiringItems.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {(expiredItems.length > 0 || lowStockItems.length > 0 || expiringItems.length > 0) && (
+        <div className="space-y-4">
+          {/* Critical Expired Items Alert */}
+          {expiredItems.length > 0 && (
+            <Card className="border-red-600 bg-red-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-800">
+                  <AlertTriangle className="h-5 w-5" />
+                  EXPIRED ITEMS - IMMEDIATE ACTION REQUIRED
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {expiredItems.slice(0, 3).map((item) => (
+                    <div key={item.id} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-red-300">
+                      <span className="font-medium text-red-800">{item.name} <span className="text-xs text-gray-500">({item.code})</span></span>
+                      <div className="text-right">
+                        <Badge className="bg-red-600 text-white">
+                          EXPIRED: {new Date(item.expiryDate!).toLocaleDateString()}
+                        </Badge>
+                        <div className="text-xs text-red-600 mt-1">{item.currentStock} {item.unit} - DO NOT USE</div>
+                      </div>
+                    </div>
+                  ))}
+                  {expiredItems.length > 3 && (
+                    <div className="text-sm text-red-700">
+                      +{expiredItems.length - 3} more expired items
+                      <button
+                        className="ml-2 text-red-800 underline hover:text-red-900 font-medium"
+                        onClick={() => setShowExpiredModal(true)}
+                      >
+                        Show All
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {lowStockItems.length > 0 && (
             <Card className="border-red-200">
               <CardHeader>
@@ -255,6 +406,7 @@ const Inventory = () => {
               </CardContent>
             </Card>
           )}
+          </div>
         </div>
       )}
 
@@ -292,6 +444,7 @@ const Inventory = () => {
                   <SelectValue>
                     {filterType === 'all' && 'Show All'}
                     {filterType === 'lowStock' && 'Low Stock'}
+                    {filterType === 'expired' && 'Expired Items'}
                     {filterType === 'expiringSoon' && 'Expiring Soon'}
                     {filterType === 'lastRestocked' && 'Restock Date'}
                     {filterType === 'createdAt' && 'Created Date'}
@@ -301,38 +454,58 @@ const Inventory = () => {
                   <div className="px-2 py-1 text-xs text-gray-500">By Status</div>
                   <SelectItem value="all">Show All</SelectItem>
                   <SelectItem value="lowStock">Low Stock</SelectItem>
+                  <SelectItem value="expired">Expired Items</SelectItem>
                   <SelectItem value="expiringSoon">Expiring Soon</SelectItem>
                   <div className="px-2 py-1 text-xs text-gray-500">By Date</div>
                   <SelectItem value="lastRestocked">Restock Date</SelectItem>
                   <SelectItem value="createdAt">Created Date</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Show date input only for date filters */}
+              {/* Date Range Filter - Show for date filters */}
               {(filterType === 'lastRestocked' || filterType === 'createdAt') && (
                 <>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    className="border rounded px-2 py-1"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                    className="text-xs"
-                  >
-                    Today
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedDate("")}
-                    className="text-xs"
-                  >
-                    Clear
-                  </Button>
+                  <Select value={dateRangeFilter} onValueChange={handleDateRangeChange}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue>
+                        {dateRangeFilter === 'all' && 'All Time'}
+                        {dateRangeFilter === 'today' && 'Today'}
+                        {dateRangeFilter === 'yesterday' && 'Yesterday'}
+                        {dateRangeFilter === 'last7days' && 'Last 7 Days'}
+                        {dateRangeFilter === 'thismonth' && 'This Month'}
+                        {dateRangeFilter === 'custom' && 'Custom Range'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="yesterday">Yesterday</SelectItem>
+                      <SelectItem value="last7days">Last 7 Days</SelectItem>
+                      <SelectItem value="thismonth">This Month</SelectItem>
+                      <SelectItem value="custom">Custom Range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  
+                  {/* Custom Date Inputs - Show only when custom is selected */}
+                  {dateRangeFilter === 'custom' && (
+                    <>
+                      <span className="text-sm text-gray-600">From:</span>
+                      <input
+                        type="date"
+                        value={dateRange.startDate}
+                        onChange={e => setDateRange({ ...dateRange, startDate: e.target.value })}
+                        className="border rounded px-2 py-1"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                      <span className="text-sm text-gray-600">To:</span>
+                      <input
+                        type="date"
+                        value={dateRange.endDate}
+                        onChange={e => setDateRange({ ...dateRange, endDate: e.target.value })}
+                        className="border rounded px-2 py-1"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -364,13 +537,22 @@ const Inventory = () => {
           {currentInventory.map((item) => {
             const stockStatus = getStockStatus(item.currentStock, item.minStock, item.maxStock);
             const stockPercentage = (item.currentStock / item.maxStock) * 100;
-            // Expiring soon logic
+            // Expiry status logic
+            let isExpired = false;
             let isExpiringSoon = false;
             if (item.expiryDate) {
               const expiryDate = new Date(item.expiryDate);
-              const thirtyDaysFromNow = new Date();
-              thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-              isExpiringSoon = expiryDate <= thirtyDaysFromNow;
+              const today = new Date();
+              today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
+              expiryDate.setHours(0, 0, 0, 0);
+              
+              if (expiryDate < today) {
+                isExpired = true;
+              } else {
+                const thirtyDaysFromNow = new Date();
+                thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+                isExpiringSoon = expiryDate <= thirtyDaysFromNow;
+              }
             }
             return (
               <Card key={item.id} className="hover:shadow-lg transition-shadow">
@@ -438,7 +620,10 @@ const Inventory = () => {
                         {item.expiryDate ? (
                           <>
                             Exp: {new Date(item.expiryDate).toLocaleDateString()}
-                            {isExpiringSoon && (
+                            {isExpired && (
+                              <Badge className="bg-red-600 text-white border-red-600 px-2 py-0.5 text-xs font-semibold">EXPIRED</Badge>
+                            )}
+                            {!isExpired && isExpiringSoon && (
                               <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 px-2 py-0.5 text-xs font-semibold">Exp Soon</Badge>
                             )}
                           </>
@@ -480,6 +665,10 @@ const Inventory = () => {
                       Order History
                     </Button> */}
                     <InventoryBatchHistoryDialog itemId={item.id} />
+                    <InventoryAuditDialog 
+                      itemId={item.id} 
+                      itemName={item.name}
+                    />
                     <InventoryFormDialog
                       item={item}
                       onSuccess={fetchInventory}
@@ -568,6 +757,30 @@ const Inventory = () => {
                 <span className="text-xs text-red-600 font-mono">Stock: {item.currentStock}</span>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expired Items Modal */}
+      <Dialog open={showExpiredModal} onOpenChange={setShowExpiredModal}>
+        <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-red-800">⚠️ All Expired Items - CRITICAL</DialogTitle>
+          </DialogHeader>
+          <div className="divide-y">
+            {expiredItems.map((item) => (
+              <div key={item.id} className="py-2 flex justify-between items-center text-sm">
+                <span className="font-medium text-red-800">{item.name} <span className="text-xs text-gray-400">({item.code})</span></span>
+                <div className="text-right">
+                  <span className="text-xs text-red-800 font-bold block">EXPIRED: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'No expiry'}</span>
+                  <span className="text-xs text-red-600">{item.currentStock} {item.unit} - DO NOT USE</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded">
+            <p className="text-sm text-red-800 font-medium">⚠️ Healthcare Safety Warning:</p>
+            <p className="text-xs text-red-700 mt-1">These items have expired and must NOT be used for patient care. Remove from active inventory immediately.</p>
           </div>
         </DialogContent>
       </Dialog>

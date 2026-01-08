@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ConsultationStartDialog from "@/components/consultation/ConsultationStartDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X } from "lucide-react";
+import { Calendar, Clock, User, AlertTriangle, Phone, Filter, Search, ChevronLeft, ChevronRight, ArrowRightLeft, X, Heart, ArrowRight, UserCheck } from "lucide-react";
 import { 
   Pagination, 
   PaginationContent, 
@@ -18,6 +20,7 @@ import AppointmentDialog from "@/components/appointments/AppointmentDialog";
 import RescheduleDialog from "@/components/appointments/RescheduleDialog";
 import TimeSlotSwapDialog from "@/components/appointments/TimeSlotSwapDialog";
 import FilterDialog from "@/components/appointments/FilterDialog";
+import VitalsDialog from "@/components/appointments/VitalsDialog";
 import api from "@/lib/api";
 import { 
   AlertDialog,
@@ -30,9 +33,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FilterValues } from "@/components/appointments/FilterDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface Doctor {
+  id: number;
+  name: string;
+  specialization: string;
+}
 
 interface Appointment {
   id: number;
+  patientId: number;
   patientName: string;
   patientPhone: string;
   date: string;
@@ -42,10 +53,17 @@ interface Appointment {
   status: string;
   notes?: string;
   patientVisibleId?: string;
+  consultationStartTime?: string;
+  consultationEndTime?: string;
+  actualStartTime?: string;
+  actualEndTime?: string;
+  doctorId?: number;
+  doctorName?: string;
 }
 
 const Appointments = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   // Fix timezone issue by creating date string manually
   const today = new Date();
   const year = today.getFullYear();
@@ -64,6 +82,17 @@ const Appointments = () => {
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<Appointment | null>(null);
+  const [consultationDialogOpen, setConsultationDialogOpen] = useState(false);
+  const [selectedAppointmentForConsultation, setSelectedAppointmentForConsultation] = useState<Appointment | null>(null);
+  const [vitalsDialogOpen, setVitalsDialogOpen] = useState(false);
+  const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState<Appointment | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(() => {
+    // Load selected doctor from localStorage
+    const saved = localStorage.getItem('selectedDoctorId');
+    return saved ? null : null; // Will be set after doctors are loaded
+  });
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   // Use appointment settings hook
   const { 
@@ -73,14 +102,20 @@ const Appointments = () => {
     getAvailableTimeSlots
   } = useAppointmentSettings();
 
-  // Get all possible slots for the selected date
-  const allTimeSlots = getActiveTimeSlots().map(slot => slot.time);
-  // Get appointments for the selected date
-  const appointmentsForDate = appointments.filter(a => a.date.split('T')[0] === selectedDate);
+  // Get all possible slots for the selected date (use appointment settings time slots)
+  // For now, all doctors share the same time slots from appointment settings
+  // In future, can be customized per doctor
+  const allTimeSlots = selectedDoctor ? getActiveTimeSlots().map(slot => slot.time) : [];
+  // Get appointments for the selected date and doctor
+  const appointmentsForDate = appointments.filter(a => {
+    const dateMatch = a.date.split('T')[0] === selectedDate;
+    const doctorMatch = selectedDoctor ? a.doctorId === selectedDoctor.id : true;
+    return dateMatch && doctorMatch;
+  });
   // Get booked times
   const bookedTimes = appointmentsForDate.map(a => a.time);
-  // Get available slots for the selected date
-  const availableSlots = getAvailableTimeSlots(new Date(selectedDate), appointmentsForDate).map(slot => slot.time);
+  // Get available slots for the selected date (only if doctor is selected)
+  const availableSlots = selectedDoctor ? getAvailableTimeSlots(new Date(selectedDate), appointmentsForDate).map(slot => slot.time) : [];
   
   // Daily appointments counter
   const dailyAppointmentsCount = appointmentsForDate.length;
@@ -90,17 +125,23 @@ const Appointments = () => {
 
   // Helper to get slot status
   const getSlotStatus = (time: string) => {
-    if (!allTimeSlots.includes(time)) return 'unavailable';
+    if (!selectedDoctor || !allTimeSlots.includes(time)) return 'unavailable';
+    
+    // Check if this time slot has a completed appointment
+    const appointmentAtTime = appointmentsForDate.find(a => a.time === time);
+    if (appointmentAtTime && appointmentAtTime.status === 'Completed') return 'completed';
+    
     if (bookedTimes.includes(time)) return 'booked';
     if (availableSlots.includes(time)) return 'available';
     return 'unavailable';
   };
 
-  // Helper to get slot color
+  // Helper to get slot color (Healthcare standard colors)
   const getSlotColor = (status: string) => {
     switch (status) {
       case 'available': return 'bg-green-100 text-green-800 border-green-400 hover:bg-green-200';
-      case 'booked': return 'bg-red-100 text-red-800 border-red-400 cursor-not-allowed opacity-60';
+      case 'booked': return 'bg-blue-100 text-blue-800 border-blue-400 cursor-not-allowed opacity-60';
+      case 'completed': return 'bg-gray-300 text-gray-700 border-gray-500 cursor-not-allowed opacity-80';
       case 'unavailable': return 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-50';
       default: return 'bg-gray-100 text-gray-400 border-gray-300';
     }
@@ -124,10 +165,37 @@ const Appointments = () => {
     }
   }, [toast]);
 
+  // Fetch doctors
+  const fetchDoctors = useCallback(async () => {
+    try {
+      setLoadingDoctors(true);
+      const response = await api.get('/doctors');
+      setDoctors(response.data);
+      
+      // Restore selected doctor from localStorage
+      const savedDoctorId = localStorage.getItem('selectedDoctorId');
+      if (savedDoctorId) {
+        const doctor = response.data.find((d: Doctor) => d.id.toString() === savedDoctorId);
+        if (doctor) {
+          setSelectedDoctor(doctor);
+        }
+      }
+    } catch (error: unknown) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch doctors",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingDoctors(false);
+    }
+  }, [toast]);
+
   // Fetch appointments on component mount
   useEffect(() => {
     fetchAppointments();
-  }, [fetchAppointments]);
+    fetchDoctors();
+  }, [fetchAppointments, fetchDoctors]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -192,23 +260,50 @@ const Appointments = () => {
     }
   };
 
-  const handleStartSession = async (appointmentId: number) => {
+  const handleStartConsultationClick = async (appointment: Appointment) => {
+    // Direct navigation to patient consultation without dialog
     try {
-      const response = await api.put(`/appointments/${appointmentId}`, { status: "In Progress" });
-      setAppointments(prev => prev.map(a => a.id === appointmentId ? response.data : a));
+      // Start the consultation via API
+      const response = await api.post(
+        `/appointments/${appointment.id}/start-consultation`,
+        { forceStart: false }
+      );
+
       toast({
-        title: "Session Started",
-        description: "The appointment session has begun."
+        title: "Consultation Started",
+        description: `Consultation started for ${appointment.patientName}`,
       });
-      // Refresh appointments after starting session
-      fetchAppointments();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start session",
-        variant: "destructive"
-      });
+
+      // Navigate directly to patient exam
+      navigate(`/patient-exam?patientId=${appointment.patientId}&role=doctor&appointmentId=${appointment.id}`);
+    } catch (error: unknown) {
+      // If there's an error, show the dialog for force start option
+      const errorResponse = (error as { response?: { data?: { error?: string } } })?.response?.data;
+      const errorMessage = errorResponse?.error || "";
+      
+      // If it's a timing issue or slot ended, show the dialog
+      if (errorMessage.includes("early") || errorMessage.includes("late") || errorMessage.includes("overdue") || errorMessage.includes("ended") || errorMessage.includes("Cannot start") || errorMessage.includes("starting")) {
+        setSelectedAppointmentForConsultation(appointment);
+        setConsultationDialogOpen(true);
+      } else {
+        // For other errors, show toast
+        toast({
+          title: "Error",
+          description: errorMessage || "Failed to start consultation",
+          variant: "destructive"
+        });
+      }
     }
+  };
+
+  const handleRecordVitalsClick = (appointment: Appointment) => {
+    setSelectedAppointmentForVitals(appointment);
+    setVitalsDialogOpen(true);
+  };
+
+  const handleConsultationStarted = (appointmentData: Appointment) => {
+    setAppointments(prev => prev.map(a => a.id === appointmentData.id ? appointmentData : a));
+    fetchAppointments(); // Refresh to get updated data
   };
 
   const handleReschedule = async (appointmentId: number, newDate: string, newTime: string) => {
@@ -319,6 +414,12 @@ const Appointments = () => {
       return false;
     }
     
+    // Doctor filter - only show appointments for selected doctor
+    if (selectedDoctor && appointment.doctorId !== selectedDoctor.id) {
+      console.log('Doctor mismatch');
+      return false;
+    }
+    
     // Type filter
     if ((filters.type && filters.type.length > 0) && !filters.type.includes(appointment.type)) {
       return false;
@@ -328,16 +429,25 @@ const Appointments = () => {
     if (timeRange !== "all") {
       const hour = parseInt(appointment.time.split(':')[0]);
       const isPM = appointment.time.includes('PM');
-      const hour24 = isPM && hour !== 12 ? hour + 12 : hour;
+      let hour24 = isPM && hour !== 12 ? hour + 12 : hour;
+      if (!isPM && hour === 12) hour24 = 0; // Handle 12 AM
+      
       switch (timeRange) {
         case "morning":
-          if (hour24 < 8 || hour24 >= 12) return false;
+          // 6 AM to 12 PM (6-11)
+          if (hour24 < 6 || hour24 >= 12) return false;
           break;
         case "afternoon":
+          // 12 PM to 5 PM (12-16)
           if (hour24 < 12 || hour24 >= 17) return false;
           break;
         case "evening":
-          if (hour24 < 17 || hour24 >= 20) return false;
+          // 5 PM to 9 PM (17-20)
+          if (hour24 < 17 || hour24 >= 21) return false;
+          break;
+        case "night":
+          // 9 PM to 6 AM (21-23, 0-5)
+          if (hour24 < 21 && hour24 >= 6) return false;
           break;
       }
     }
@@ -438,7 +548,7 @@ const Appointments = () => {
         </div>
       </div>
 
-      {/* Date Selector */}
+      {/* Date and Doctor Selector */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
@@ -446,16 +556,42 @@ const Appointments = () => {
             <input
               type="date"
               value={selectedDate}
-              min={(() => {
-                const today = new Date();
-                const year = today.getFullYear();
-                const month = String(today.getMonth() + 1).padStart(2, '0');
-                const day = String(today.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-              })()} // <-- disables past dates
               onChange={(e) => handleDateChange(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-500"
             />
+            
+            <div className="flex items-center gap-2 ml-6">
+              <UserCheck className="h-4 w-4 text-medical-500" />
+              <label className="text-sm font-medium text-gray-700">Doctor:</label>
+              <Select 
+                value={selectedDoctor?.id.toString() || ""} 
+                onValueChange={(value) => {
+                  const doctor = doctors.find(d => d.id.toString() === value);
+                  setSelectedDoctor(doctor || null);
+                  // Save to localStorage
+                  if (doctor) {
+                    localStorage.setItem('selectedDoctorId', doctor.id.toString());
+                  } else {
+                    localStorage.removeItem('selectedDoctorId');
+                  }
+                }}
+                disabled={loadingDoctors}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder={loadingDoctors ? "Loading..." : "Select Doctor"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {doctors.map((doctor) => (
+                    <SelectItem key={doctor.id} value={doctor.id.toString()}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{doctor.name}</span>
+                        <span className="text-xs text-gray-500">{doctor.specialization}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="ml-auto flex items-center gap-4">
               <div className={`text-sm font-medium ${
                 isDailyLimitReached ? 'text-red-600' : 
@@ -530,7 +666,29 @@ const Appointments = () => {
                           <span>{appointment.duration} min</span>
                           <span>•</span>
                           <span className="font-medium">{appointment.type}</span>
+                          {appointment.doctorName && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <UserCheck className="h-4 w-4" />
+                                Dr. {appointment.doctorName}
+                              </span>
+                            </>
+                          )}
                         </div>
+                        {appointment.status === 'Consultation Started' && appointment.actualStartTime && (
+                          <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            <Clock className="h-3 w-3" />
+                            <span>Started: {new Date(appointment.actualStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+
+                          </div>
+                        )}
+                        {appointment.status === 'Completed' && appointment.actualStartTime && appointment.actualEndTime && (
+                          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                            <Clock className="h-3 w-3" />
+                            <span>Duration: {new Date(appointment.actualStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - {new Date(appointment.actualEndTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        )}
                         {appointment.notes && (
                           <p className="text-sm text-gray-500">{appointment.notes}</p>
                         )}
@@ -538,22 +696,44 @@ const Appointments = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleRescheduleClick(appointment)}
-                      >
-                        Reschedule
-                      </Button>
+                      {appointment.status !== 'Consultation Started' && appointment.status !== 'Aborted' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleRescheduleClick(appointment)}
+                        >
+                          Reschedule
+                        </Button>
+                      )}
                       {appointment.status === 'Confirmed' && (
                         <>
                           <Button 
-                            size="sm" 
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleStartSession(appointment.id)}
+                            size="sm"
+                            variant="outline"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            onClick={() => handleRecordVitalsClick(appointment)}
                           >
-                            Start Session
+                            <Heart className="h-4 w-4 mr-1" />
+                            Record Vitals
                           </Button>
+                          {appointment.type === 'Emergency' ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => handleStartConsultationClick(appointment)}
+                            >
+                              <AlertTriangle className="h-4 w-4 mr-1" />
+                              Handle Urgent
+                            </Button>
+                          ) : (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => handleStartConsultationClick(appointment)}
+                            >
+                              Start Consultation
+                            </Button>
+                          )}
                           <Button 
                             size="sm"
                             variant="outline"
@@ -567,9 +747,18 @@ const Appointments = () => {
                       {appointment.status === 'Urgent' && (
                         <>
                           <Button 
+                            size="sm"
+                            variant="outline"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            onClick={() => handleRecordVitalsClick(appointment)}
+                          >
+                            <Heart className="h-4 w-4 mr-1" />
+                            Record Vitals
+                          </Button>
+                          <Button 
                             size="sm" 
                             className="bg-red-600 hover:bg-red-700"
-                            onClick={() => handleStartSession(appointment.id)}
+                            onClick={() => handleStartConsultationClick(appointment)}
                           >
                             <AlertTriangle className="h-4 w-4 mr-1" />
                             Handle Urgent
@@ -581,6 +770,20 @@ const Appointments = () => {
                             onClick={() => handleCancelClick(appointment)}
                           >
                             <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                      {appointment.status === 'Consultation Started' && (
+                        <>
+                          <Badge className="bg-blue-100 text-blue-800">
+                            Consultation In Progress
+                          </Badge>
+                          <Button 
+                            size="sm" 
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => navigate(`/patient-exam?patientId=${appointment.patientId}&role=doctor&appointmentId=${appointment.id}`)}
+                          >
+                            <ArrowRight className="h-4 w-4" />
                           </Button>
                         </>
                       )}
@@ -649,6 +852,7 @@ const Appointments = () => {
       onSave={handleSaveAppointment}
       selectedDate={slotToBook.date}
       selectedTime={slotToBook.time}
+      selectedDoctor={selectedDoctor}
       onClose={() => {
         setDialogOpen(false);
         setSlotToBook(null);
@@ -662,6 +866,7 @@ const Appointments = () => {
           onSave={handleSaveAppointment}
           selectedDate={selectedDate}
           selectedTime={undefined}
+          selectedDoctor={selectedDoctor}
           onClose={() => setDialogOpen(false)}
         />
       )}
@@ -710,20 +915,63 @@ const Appointments = () => {
         </AlertDialog>
       )}
 
+      {/* Consultation Start Dialog */}
+      {consultationDialogOpen && selectedAppointmentForConsultation && (
+        <ConsultationStartDialog
+          appointmentId={selectedAppointmentForConsultation.id}
+          isOpen={consultationDialogOpen}
+          onClose={() => {
+            setConsultationDialogOpen(false);
+            setSelectedAppointmentForConsultation(null);
+          }}
+          onConsultationStarted={handleConsultationStarted}
+        />
+      )}
+
       {/* Time Slots */}
       <Card>
         <CardHeader>
-          <CardTitle>Available Time Slots</CardTitle>
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md px-4 py-2 my-2">
-            <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
-            <span className="text-sm font-medium text-blue-800">Click an <span className="font-semibold underline">available time slot</span> below to schedule a new appointment.</span>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            Available Time Slots
+            {selectedDoctor && (
+              <Badge className="bg-medical-100 text-medical-800">
+                {selectedDoctor.name} - {selectedDoctor.specialization}
+              </Badge>
+            )}
+          </CardTitle>
+          {selectedDoctor ? (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md px-4 py-2 my-2">
+              <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
+              <span className="text-sm font-medium text-blue-800">
+                Click an <span className="font-semibold underline">available time slot</span> below to schedule a new appointment with {selectedDoctor.name}.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-md px-4 py-2 my-2">
+              <svg className="h-5 w-5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" /></svg>
+              <span className="text-sm font-medium text-yellow-800">
+                Please select a doctor first to view available time slots.
+              </span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {settingsLoading ? (
             <div className="text-center py-4">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-medical-500 mx-auto"></div>
               <p className="mt-2 text-gray-600">Loading time slots...</p>
+            </div>
+          ) : !selectedDoctor ? (
+            <div className="text-center py-8">
+              <UserCheck className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Doctor Selected</h3>
+              <p className="text-gray-500">Please select a doctor from the dropdown above to view available time slots.</p>
+            </div>
+          ) : allTimeSlots.length === 0 ? (
+            <div className="text-center py-8">
+              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Time Slots Available</h3>
+              <p className="text-gray-500">No time slots are configured in appointment settings. Please contact administrator.</p>
             </div>
           ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -740,6 +988,7 @@ const Appointments = () => {
                 >
                   {time}
                   {status === 'booked' && <span className="ml-2 text-xs">(Booked)</span>}
+                  {status === 'completed' && <span className="ml-2 text-xs">(Completed)</span>}
                   {status === 'unavailable' && <span className="ml-2 text-xs">(Unavailable)</span>}
                 </Button>
               );
@@ -748,6 +997,20 @@ const Appointments = () => {
           )}
         </CardContent>
       </Card>
+      {vitalsDialogOpen && selectedAppointmentForVitals && (
+        <VitalsDialog
+          appointment={selectedAppointmentForVitals}
+          isOpen={vitalsDialogOpen}
+          onClose={() => {
+            setVitalsDialogOpen(false);
+            setSelectedAppointmentForVitals(null);
+          }}
+          onVitalsSaved={() => {
+            // Optionally refresh appointments or show success message
+            fetchAppointments();
+          }}
+        />
+      )}
     </div>
   );
 };

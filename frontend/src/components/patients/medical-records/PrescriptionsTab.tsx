@@ -1,178 +1,350 @@
-
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useReactToPrint } from "react-to-print";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { 
-  Pill, 
-  Calendar, 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Save, 
-  X,
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Pill,
+  Calendar,
   Download,
+  Eye,
   Printer,
-  Archive
 } from "lucide-react";
+import PrescriptionViewModal from "@/components/prescription/PrescriptionViewModal";
+import PrescriptionPrintTemplate from "@/components/prescription/PrescriptionPrintTemplate";
+import { downloadPrescriptionPDF } from "@/components/prescription/PrescriptionPDF";
 
 interface Prescription {
   id: number;
   date: string;
-  medication: string;
-  dosage: string;
-  frequency: string;
-  doctor: string;
-  status: string;
+  createdAt: string;
+  doctorName: string;
+  doctorQualification?: string;
+  doctorRegistrationNumber?: string;
+  doctorSignature?: string;
+  chiefComplaint?: string;
+  medications: Array<{
+    id: number;
+    medicineName: string;
+    dosage: string;
+    frequency: string;
+    duration: string;
+  }>;
+  investigations?: string;
+  doctorNotes?: string;
+  advice?: string;
+  // Direct patient fields (stored in prescription)
+  patientName?: string;
+  patientVisibleId?: string;
+  patientAge?: number;
+  patientGender?: string;
+  // Keep old patient relation for backward compatibility
+  patient?: {
+    name: string;
+    visibleId: string;
+    age: number;
+    gender: string;
+  };
 }
 
 interface PrescriptionsTabProps {
   prescriptions: Prescription[];
-  onDeletePrescription: (prescriptionId: number) => void;
-  onDownloadReport: (type: string) => void;
-  getStatusBadge: (status: string) => string;
+  onDownloadReport: (type: string, format?: string) => void;
+  patientName: string;
+  patientId: string;
+  prescriptionToOpen?: Prescription;
 }
 
-const PrescriptionsTab = ({ prescriptions, onDeletePrescription, onDownloadReport, getStatusBadge }: PrescriptionsTabProps) => {
-  const [editingPrescription, setEditingPrescription] = useState<number | null>(null);
-  const [showAddPrescription, setShowAddPrescription] = useState(false);
+const PrescriptionsTab = ({
+  prescriptions,
+  onDownloadReport,
+  patientName,
+  patientId,
+  prescriptionToOpen,
+}: PrescriptionsTabProps) => {
+  const [showAllPrescriptions, setShowAllPrescriptions] = useState(false);
+  const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
+  const [prescriptionToPrint, setPrescriptionToPrint] = useState<Prescription | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
+  const [hospitalInfo, setHospitalInfo] = useState<any>(null);
+
+  // Fetch hospital info for print header
+  useEffect(() => {
+    const fetchHospitalInfo = async () => {
+      try {
+        const res = await (await import('@/lib/api')).default.get('/settings/hospital-settings');
+        setHospitalInfo(res.data);
+      } catch (e) {
+        setHospitalInfo({
+          name: 'MEDICAL CLINIC',
+          address: '',
+          phone: '',
+          license: '',
+        });
+      }
+    };
+    fetchHospitalInfo();
+  }, []);
+
+  // Auto-open prescription if provided from Reports navigation
+  useEffect(() => {
+    if (prescriptionToOpen && prescriptions.length > 0) {
+      // Find the prescription in the current list or use the provided one
+      const prescriptionToShow = prescriptions.find(p => p.id === prescriptionToOpen.id) || prescriptionToOpen;
+      setSelectedPrescription(prescriptionToShow);
+    }
+  }, [prescriptionToOpen, prescriptions]);
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: `Prescription-${prescriptionToPrint?.id || 'Unknown'}`,
+    onAfterPrint: () => setPrescriptionToPrint(null),
+  });
+
+  const triggerPrint = (prescription: Prescription) => {
+    setPrescriptionToPrint(prescription);
+    // Small delay to ensure state is updated before printing
+    setTimeout(() => {
+      handlePrint();
+    }, 100);
+  };
+
+  const handleDownloadPDF = async (prescription: Prescription) => {
+    if (hospitalInfo) {
+      await downloadPrescriptionPDF(prescription, hospitalInfo, patientName, patientId);
+    }
+  };
+
+  // No need for complex CSS print styles anymore - react-to-print handles this
+
+
+
+  const RECENT_LIMIT = 5;
+  const displayedPrescriptions = showAllPrescriptions
+    ? prescriptions
+    : prescriptions.slice(0, RECENT_LIMIT);
+  const hasMorePrescriptions = prescriptions.length > RECENT_LIMIT;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Pill className="h-5 w-5" />
-            Prescription History
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => setShowAddPrescription(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Prescription
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onDownloadReport('prescriptions')}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Pill className="h-5 w-5" />
+              Prescription History
+              <span className="text-sm font-normal text-gray-500">
+                (
+                {showAllPrescriptions
+                  ? prescriptions.length
+                  : Math.min(prescriptions.length, RECENT_LIMIT)}{" "}
+                of {prescriptions.length})
+              </span>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onDownloadReport("prescriptions")}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {showAddPrescription && (
-          <Card className="mb-4 border-dashed border-2 border-medical-200">
-            <CardHeader>
-              <CardTitle className="text-lg">Add New Prescription</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Date</label>
-                  <Input type="date" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Doctor</label>
-                  <Input placeholder="Dr. Name" />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Medication</label>
-                  <Input placeholder="Medication name" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Dosage</label>
-                  <Input placeholder="e.g., 10mg" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Frequency</label>
-                  <Input placeholder="e.g., Twice daily" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm">
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Prescription
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowAddPrescription(false)}>
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        </CardHeader>
+        <CardContent>
+          {prescriptions.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Pill className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p>No prescriptions recorded yet</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Doctor</TableHead>
+                  <TableHead>Chief Complaint</TableHead>
+                  <TableHead>Medications</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedPrescriptions.map((prescription) => (
+                  <TableRow key={prescription.id}>
+                    <TableCell className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <div className="font-medium">
+                        {new Date(prescription.date).toLocaleDateString()}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">
+                        Dr. {prescription.doctorName}
+                        {prescription.doctorQualification && `, ${prescription.doctorQualification}`}
+                      </div>
+                      {prescription.doctorRegistrationNumber && (
+                        <div className="text-xs text-gray-500">
+                          Reg. No: {prescription.doctorRegistrationNumber}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="max-w-xs">
+                      <div
+                        className="truncate"
+                        title={prescription.chiefComplaint}
+                      >
+                        {prescription.chiefComplaint || "N/A"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-sm">
+                      {prescription.medications.length > 0 ? (
+                        <div className="space-y-1">
+                          {prescription.medications.slice(0, 2).map((med) => (
+                            <div key={med.id} className="text-sm">
+                              <span className="font-medium">
+                                {med.medicineName}
+                              </span>
+                              <span className="text-gray-500 ml-2">
+                                {med.dosage} • {med.frequency}
+                              </span>
+                            </div>
+                          ))}
+                          {prescription.medications.length > 2 && (
+                            <div className="text-xs text-gray-500">
+                              +{prescription.medications.length - 2} more
+                              medications
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">No medications</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="max-w-xs">
+                      <div
+                        className="truncate text-sm"
+                        title={prescription.doctorNotes || prescription.advice}
+                      >
+                        {prescription.doctorNotes ||
+                          prescription.advice ||
+                          "No notes"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedPrescription(prescription)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View Full Prescription</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => triggerPrint(prescription)}
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Print Prescription</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDownloadPDF(prescription)}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Download PDF</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Medication</TableHead>
-              <TableHead>Dosage</TableHead>
-              <TableHead>Frequency</TableHead>
-              <TableHead>Doctor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {prescriptions.map((prescription) => (
-              <TableRow key={prescription.id}>
-                <TableCell className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-gray-400" />
-                  {prescription.date}
-                </TableCell>
-                <TableCell>{prescription.medication}</TableCell>
-                <TableCell>{prescription.dosage}</TableCell>
-                <TableCell>{prescription.frequency}</TableCell>
-                <TableCell>{prescription.doctor}</TableCell>
-                <TableCell>
-                  <Badge className={getStatusBadge(prescription.status)}>
-                    {prescription.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setEditingPrescription(prescription.id)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <Printer className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <Archive className="h-4 w-4" />
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Prescription</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete this prescription record? This action cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => onDeletePrescription(prescription.id)} className="bg-red-600 hover:bg-red-700">
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          {/* Show All / Show Recent Toggle */}
+          {hasMorePrescriptions && (
+            <div className="flex justify-center mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAllPrescriptions(!showAllPrescriptions)}
+                className="text-medical-600 hover:text-medical-700"
+              >
+                {showAllPrescriptions ? (
+                  <>Show Recent Only ({RECENT_LIMIT})</>
+                ) : (
+                  <>Show All Prescriptions ({prescriptions.length})</>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* View Modal */}
+      {selectedPrescription && (
+        <PrescriptionViewModal
+          prescription={selectedPrescription}
+          onClose={() => setSelectedPrescription(null)}
+        />
+      )}
+
+      {/* Hidden Print Template */}
+      <div style={{ display: 'none' }}>
+        {prescriptionToPrint && hospitalInfo && (
+          <PrescriptionPrintTemplate
+            ref={printRef}
+            prescription={prescriptionToPrint}
+            hospitalInfo={hospitalInfo}
+            patientName={patientName}
+            patientId={patientId}
+          />
+        )}
+      </div>
+    </>
   );
 };
 

@@ -7,6 +7,7 @@ const {
   updateEmergencyCase,
   deleteEmergencyCase,
   transferEmergencyCase,
+  getPatientTransferHistory,
   registerEmergencyCase,
 } = require('../controllers/emergency/emergency');
 
@@ -24,6 +25,9 @@ router.put('/:id', updateEmergencyCase);
 
 // Transfer emergency case
 router.put('/:id/transfer', transferEmergencyCase);
+
+// Get patient transfer history (for audit)
+router.get('/patient/:patientId/transfers', getPatientTransferHistory);
 
 // Delete emergency case
 router.delete('/:id', deleteEmergencyCase);

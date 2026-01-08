@@ -35,6 +35,8 @@ import { useHospitalSettings } from "@/hooks/settings_hook/use-hospital-settings
 import EmailConfiguration from "@/components/settings/EmailConfiguration";
 import CategoryManagement from "@/components/settings/CategoryManagement";
 import SupplierManagement from "@/components/settings/SupplierManagement";
+import StaffSettingsManagement from "@/components/settings/StaffSettingsManagement";
+import VitalsSettingsManagement from "@/components/settings/VitalsSettingsManagement";
 
 const defaultHospitalSettings = {
   name: "",
@@ -110,9 +112,11 @@ const Settings = () => {
   // Prevent rendering until hospitalSettings is loaded
   if (loading || !hospitalSettings) {
     return (
-      <div className="flex justify-center items-center h-96">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-500 mx-auto"></div>
-        <span className="ml-4 text-gray-600">Loading settings...</span>
+      <div className="p-6">
+        <div className="flex flex-col justify-center items-center h-96">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-500"></div>
+          <p className="mt-4 text-gray-600">Loading settings...</p>
+        </div>
       </div>
     );
   }
@@ -125,15 +129,17 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="hospital" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-10">
           <TabsTrigger value="hospital">Hospital</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
+          <TabsTrigger value="vitals">Vitals</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="staff">Staff</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hospital" className="space-y-6">
@@ -473,6 +479,10 @@ const Settings = () => {
           <AppointmentSettings />
         </TabsContent>
 
+        <TabsContent value="vitals">
+          <VitalsSettingsManagement />
+        </TabsContent>
+
         <TabsContent value="inventory" className="space-y-6">
           <div className="space-y-8">
             <CategoryManagement />
@@ -538,6 +548,10 @@ const Settings = () => {
 
         <TabsContent value="email">
           <EmailConfiguration />
+        </TabsContent>
+
+        <TabsContent value="staff">
+          <StaffSettingsManagement />
         </TabsContent>
       </Tabs>
     </div>

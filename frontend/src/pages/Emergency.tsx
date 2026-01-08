@@ -7,14 +7,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Plus, Clock, User, Phone, MapPin, Activity, Siren, Heart, Zap } from "lucide-react";
+import { Plus, Clock, User, Phone, Activity, Siren, Heart, Zap, ArrowRightLeft, Calendar, ExternalLink } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
-import axios, { AxiosError } from 'axios';
+import axios from "axios";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 const statusOptions = [
   "Waiting",
   "In Treatment",
-  "Admitted",
   "Discharged"
 ];
 
@@ -38,6 +39,12 @@ interface EmergencyCase {
     temp: string;
     spo2: string;
   };
+  // Transfer information
+  transferStatus?: string;
+  transferTo?: string;
+  transferReason?: string;
+  transferNotes?: string;
+  transferTime?: string;
 }
 
 const transferHospitals = [
@@ -47,7 +54,16 @@ const transferHospitals = [
 ];
 
 const Emergency = () => {
+  // Use dynamic vitals settings
+  const { 
+    getBloodPressureStatus, 
+    getStatus, 
+    getNormalRangeText,
+    getBloodPressureRangeText 
+  } = useVitalsSettings();
+  
   const [selectedPriority, setSelectedPriority] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
   const [emergencyCases, setEmergencyCases] = useState<EmergencyCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +84,7 @@ const Emergency = () => {
   });
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  const [availableDoctors, setAvailableDoctors] = useState<Array<{id: number, name: string, qualification?: string}>>([]);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusCaseId, setStatusCaseId] = useState<number | null>(null);
   const [newStatus, setNewStatus] = useState("");
@@ -90,16 +107,160 @@ const Emergency = () => {
   const [vitalsSpO2, setVitalsSpO2] = useState("");
   const [vitalsLoading, setVitalsLoading] = useState(false);
   const [vitalsError, setVitalsError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => {
+  // Date range functionality (like billing)
+  const getToday = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    return today.toISOString().split('T')[0];
+  };
+
+  const [dateRange, setDateRange] = useState({
+    startDate: getToday(),
+    endDate: getToday()
   });
+  const [isCustomRangeSelected, setIsCustomRangeSelected] = useState(false);
+
+  // Quick date selector functions
+  const setDateRangeQuick = (type: string) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const last7Days = new Date(today);
+    last7Days.setDate(today.getDate() - 7);
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+    switch (type) {
+      case 'today':
+        setDateRange({
+          startDate: formatDate(today),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'yesterday':
+        setDateRange({
+          startDate: formatDate(yesterday),
+          endDate: formatDate(yesterday)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'last7days':
+        setDateRange({
+          startDate: formatDate(last7Days),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'thismonth':
+        setDateRange({
+          startDate: formatDate(thisMonthStart),
+          endDate: formatDate(today)
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'clear':
+        setDateRange({
+          startDate: "",
+          endDate: ""
+        });
+        setIsCustomRangeSelected(false);
+        break;
+      case 'custom':
+        setIsCustomRangeSelected(true);
+        break;
+    }
+  };
+
+  // Get user-friendly date range description
+  const getDateRangeDescription = () => {
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "All Time";
+    }
+    
+    const today = getToday();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "Today";
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "Yesterday";
+    }
+    
+    if (dateRange.startDate && dateRange.endDate) {
+      const start = new Date(dateRange.startDate).toLocaleDateString();
+      const end = new Date(dateRange.endDate).toLocaleDateString();
+      
+      if (start === end) {
+        return start;
+      }
+      return `${start} - ${end}`;
+    }
+    
+    return "Custom Range";
+  };
+
+  // Get current date range type for dropdown selection
+  const getCurrentDateRangeType = () => {
+    // If custom is explicitly selected, return custom
+    if (isCustomRangeSelected) {
+      return "custom";
+    }
+    
+    if (!dateRange.startDate && !dateRange.endDate) {
+      return "clear";
+    }
+    
+    const today = getToday();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+    const last7DaysStr = last7Days.toISOString().split('T')[0];
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+    
+    if (dateRange.startDate === today && dateRange.endDate === today) {
+      return "today";
+    }
+    
+    if (dateRange.startDate === yesterdayStr && dateRange.endDate === yesterdayStr) {
+      return "yesterday";
+    }
+    
+    if (dateRange.startDate === last7DaysStr && dateRange.endDate === today) {
+      return "last7days";
+    }
+    
+    if (dateRange.startDate === thisMonthStartStr && dateRange.endDate === today) {
+      return "thismonth";
+    }
+    
+    return "custom";
+  };
+
+
+  const [transferDetailsDialogOpen, setTransferDetailsDialogOpen] = useState(false);
+  const [selectedTransferCase, setSelectedTransferCase] = useState<EmergencyCase | null>(null);
 
   const fetchCases = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get("/emergency");
+      const params = new URLSearchParams();
+      if (selectedStatus !== "all") params.append("status", selectedStatus);
+      if (selectedPriority !== "all") params.append("priority", selectedPriority);
+      if (dateRange.startDate) params.append("startDate", dateRange.startDate);
+      if (dateRange.endDate) params.append("endDate", dateRange.endDate);
+      
+      const url = params.toString() ? `/emergency?${params.toString()}` : "/emergency";
+      const res = await api.get(url);
       setEmergencyCases(res.data);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -114,7 +275,18 @@ const Emergency = () => {
 
   useEffect(() => {
     fetchCases();
-  }, []);
+  }, [selectedStatus, selectedPriority, dateRange]);
+
+  // Fetch available doctors
+  const fetchAvailableDoctors = async () => {
+    try {
+      const response = await api.get('/doctors');
+      setAvailableDoctors(response.data);
+    } catch (error) {
+      console.error('Error fetching doctors:', error);
+      setAvailableDoctors([]);
+    }
+  };
 
   // Helper to handle form input changes
   const handleRegisterInput = (field: string, value: string) => {
@@ -126,6 +298,11 @@ const Emergency = () => {
     // Frontend validation for required fields
     if (!registerForm.patientName || !registerForm.age || !registerForm.gender || !registerForm.phone) {
       setRegisterError('Please fill all required fields: Name, Age, Gender, and Phone.');
+      return;
+    }
+
+    if (!registerForm.assignedTo) {
+      setRegisterError('Please assign a doctor to this emergency case.');
       return;
     }
     // Numeric age validation
@@ -248,7 +425,7 @@ const Emergency = () => {
       case "In Treatment": return "bg-blue-100 text-blue-800";
       case "Waiting": return "bg-yellow-100 text-yellow-800";
       case "Discharged": return "bg-green-100 text-green-800";
-      case "Admitted": return "bg-purple-100 text-purple-800";
+      case "Transferred": return "bg-orange-100 text-orange-800";
       default: return "bg-gray-100 text-gray-800";
     }
   };
@@ -284,55 +461,35 @@ const Emergency = () => {
     setFullChartOpen(true);
   };
 
-  // Helper functions for vitals
+  // Helper functions for vitals - now using dynamic settings
   const getBPStatus = (bp: string) => {
-    // Accepts '120/80' or single value like '140'
+    if (!bp) return 'unknown';
     const parts = bp.split('/').map(Number);
     if (parts.length === 1 || !parts[1]) {
-      const sys = parts[0];
-      if (!sys) return 'unknown';
-      if (sys >= 130) return 'high';
-      if (sys < 90) return 'low';
-      return 'normal';
-    } else {
-      const [sys, dia] = parts;
-      if (!sys || !dia) return 'unknown';
-      if (sys >= 130 || dia >= 80) return 'high';
-      if (sys < 90 || dia < 60) return 'low';
-      return 'normal';
+      // Single value provided (systolic only)
+      return getStatus(parts[0], 'bloodPressureSys');
     }
+    // Both systolic and diastolic
+    const [sys, dia] = parts;
+    return getBloodPressureStatus(sys, dia);
   };
+  
   const getPulseStatus = (pulse: string) => {
     const p = Number(pulse);
     if (!p) return 'unknown';
-    if (p < 60) return 'low';
-    if (p > 100) return 'high';
-    return 'normal';
+    return getStatus(p, 'heartRate');
   };
+  
   const getTempStatus = (temp: string) => {
-    // Accepts '99.2°F' or '37.5°C'
     const t = parseFloat(temp);
-    if (temp.includes('C')) {
-      if (t < 36.1) return 'low'; // 97.0°F = 36.1°C
-      if (t > 37.2) return 'high'; // 99.0°F = 37.2°C
-      return 'normal';
-    } else {
-      if (t < 97.0) return 'low';
-      if (t > 99.0) return 'high';
-      return 'normal';
-    }
+    if (!t) return 'unknown';
+    return getStatus(t, 'temperature');
   };
+  
   const getSpO2Status = (spo2: string) => {
     const s = Number(spo2.replace('%', ''));
     if (!s) return 'unknown';
-    if (s < 95) return 'low';
-    return 'normal';
-  };
-  const vitalRanges = {
-    bp: '90/60–120/80 mmHg',
-    pulse: '60–100 bpm',
-    temp: '97.0–99.0°F (36.1–37.2°C)',
-    spo2: '95–100%'
+    return getStatus(s, 'oxygenSaturation');
   };
 
   const handleOpenTransferDialog = (case_: EmergencyCase) => {
@@ -352,7 +509,6 @@ const Emergency = () => {
     setTransferLoading(true);
     setTransferError(null);
     try {
-      // Placeholder API call (replace with your backend endpoint)
       await api.put(`/emergency/${transferCase?.id}/transfer`, {
         transferTo: transferHospital,
         transferReason,
@@ -370,6 +526,11 @@ const Emergency = () => {
     } finally {
       setTransferLoading(false);
     }
+  };
+
+  const handleViewTransferDetails = (case_: EmergencyCase) => {
+    setSelectedTransferCase(case_);
+    setTransferDetailsDialogOpen(true);
   };
 
   const handleOpenVitalsDialog = (case_: EmergencyCase) => {
@@ -394,6 +555,41 @@ const Emergency = () => {
           spo2: vitalsSpO2,
         },
       });
+       // Also save to patient vitals history for medical records
+      if (vitalsCase?.patientId) {
+        // Parse blood pressure
+        const bpParts = vitalsBP.split('/');
+        const systolic = bpParts[0] ? parseInt(bpParts[0]) : null;
+        const diastolic = bpParts[1] ? parseInt(bpParts[1]) : null;
+        
+        // Parse other vitals
+        const heartRate = vitalsPulse ? parseInt(vitalsPulse) : null;
+        const temperature = vitalsTemp ? parseFloat(vitalsTemp) : null;
+        const oxygenSaturation = vitalsSpO2 ? parseInt(vitalsSpO2.replace('%', '')) : null;
+
+        const vitalsPayload = {
+          patientId: vitalsCase.patientId,
+          appointmentId: null, // Emergency vitals don't have specific appointment
+          bloodPressureSys: systolic,
+          bloodPressureDia: diastolic,
+          heartRate: heartRate,
+          temperature: temperature,
+          respiratoryRate: null,
+          oxygenSaturation: oxygenSaturation,
+          weight: null,
+          height: null,
+          recordedBy: "Emergency Staff",
+          notes: `Emergency vitals recorded for case ${vitalsCase.caseId}`
+        };
+
+        try {
+          // Save to patient vitals history
+          await api.post("/vitals", vitalsPayload);
+        } catch (vitalsError) {
+          console.error('Error saving vitals to patient history:', vitalsError);
+          // Don't throw error here - we still want to update the emergency case
+        }
+      }
       setVitalsDialogOpen(false);
       setVitalsCase(null);
       fetchCases();
@@ -408,13 +604,8 @@ const Emergency = () => {
     }
   };
 
-  // Filter cases based on selectedPriority and selectedDate
-  const filteredCases = emergencyCases.filter(c => {
-    const caseDate = c.arrivalTime.split('T')[0];
-    const matchesDate = caseDate === selectedDate;
-    const matchesPriority = selectedPriority === "all" || c.triagePriority.toLowerCase() === selectedPriority;
-    return matchesDate && matchesPriority;
-  });
+  // Cases are now filtered on the backend
+  const filteredCases = emergencyCases;
 
   // Helper to format ISO string to local date/time string
   function formatLocalDateTime(isoString: string) {
@@ -438,7 +629,12 @@ const Emergency = () => {
           <Siren className="h-8 w-8 text-red-500" />
           <h1 className="text-3xl font-bold text-gray-900">Emergency Department</h1>
         </div>
-        <Dialog open={registerDialogOpen} onOpenChange={setRegisterDialogOpen}>
+        <Dialog open={registerDialogOpen} onOpenChange={(open) => {
+          setRegisterDialogOpen(open);
+          if (open) {
+            fetchAvailableDoctors();
+          }
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-red-500 hover:bg-red-600">
               <Plus className="h-4 w-4 mr-2" />
@@ -483,24 +679,46 @@ const Emergency = () => {
                 <label className="text-sm font-medium">Chief Complaint <span className="text-red-500">*</span></label>
                 <Textarea placeholder="Describe the main symptoms or condition..." value={registerForm.chiefComplaint} onChange={e => handleRegisterInput('chiefComplaint', e.target.value)} />
               </div>
-              <div>
-                <label className="text-sm font-medium">Triage Priority <span className="text-red-500">*</span></label>
-                <Select value={registerForm.triagePriority} onValueChange={v => handleRegisterInput('triagePriority', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Critical">Critical (Red)</SelectItem>
-                    <SelectItem value="High">High (Orange)</SelectItem>
-                    <SelectItem value="Medium">Medium (Yellow)</SelectItem>
-                    <SelectItem value="Low">Low (Green)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Triage Priority <span className="text-red-500">*</span></label>
+                  <Select value={registerForm.triagePriority} onValueChange={v => handleRegisterInput('triagePriority', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Critical">Critical (Red)</SelectItem>
+                      <SelectItem value="High">High (Orange)</SelectItem>
+                      <SelectItem value="Medium">Medium (Yellow)</SelectItem>
+                      <SelectItem value="Low">Low (Green)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Assign Doctor <span className="text-red-500">*</span></label>
+                  <Select value={registerForm.assignedTo} onValueChange={v => handleRegisterInput('assignedTo', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Doctor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableDoctors.map((doctor) => (
+                        <SelectItem key={doctor.id} value={doctor.name}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{doctor.name}</span>
+                            {doctor.qualification && (
+                              <span className="text-xs text-gray-500">{doctor.qualification}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid grid-cols-4 gap-4">
                 <div>
                   <Input placeholder="BP" value={registerForm.bp} onChange={e => handleRegisterInput('bp', e.target.value)} />
-                  <div className="text-xs text-gray-500 mt-1">BP (mmHg), normal: 90/60–120/80</div>
+                  <div className="text-xs text-gray-500 mt-1">BP (mmHg), normal: {getBloodPressureRangeText()}</div>
                 </div>
                 <div>
                   <Input placeholder="Pulse" value={registerForm.pulse} onChange={e => handleRegisterInput('pulse', e.target.value)} />
@@ -585,113 +803,238 @@ const Emergency = () => {
                     <SelectItem value="low">Low</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline">
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  Emergency Alert
-                </Button>
-                <div className="ml-auto">
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    className="border rounded px-2 py-1"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
+
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="Waiting">Waiting</SelectItem>
+                    <SelectItem value="In Treatment">In Treatment</SelectItem>
+                    <SelectItem value="Discharged">Discharged</SelectItem>
+                    <SelectItem value="Transferred">Transferred</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <Label className="text-sm font-medium">Date Range:</Label>
+                <Select 
+                  value={getCurrentDateRangeType()} 
+                  onValueChange={(value) => setDateRangeQuick(value)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">📅 Today</SelectItem>
+                    <SelectItem value="yesterday">📅 Yesterday</SelectItem>
+                    <SelectItem value="last7days">📅 Last 7 Days</SelectItem>
+                    <SelectItem value="thismonth">📅 This Month</SelectItem>
+                    <SelectItem value="clear">📅 All Time</SelectItem>
+                    <SelectItem value="custom">📅 Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Custom Date Range Inputs */}
+                {isCustomRangeSelected && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                      className="w-36"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <Input
+                      type="date"
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                      className="w-36"
+                    />
+                  </div>
+                )}
+
+                <div className="ml-auto text-sm text-gray-600">
+                  Showing: {getDateRangeDescription()}
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-4">
-            {filteredCases.map((case_) => (
-              <Card key={case_.id} className="hover:shadow-lg transition-shadow border-l-4 border-l-red-500">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-4">
-                        <div className="font-semibold text-lg">{case_.caseId}</div>
-                        <Badge className={getPriorityColor(case_.triagePriority)}>
-                          {case_.triagePriority}
-                        </Badge>
-                        <Badge className={getStatusColor(case_.status)}>
-                          {case_.status}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-500" />
-                        <span className="font-medium">{case_.patientName}</span>
-                        <span className="text-sm text-gray-600">({case_.age}Y, {case_.gender})</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Phone className="h-4 w-4" />
-                        <span>{case_.phone}</span>
-                      </div>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-4 w-4 text-gray-500" />
-                        <span>{formatLocalDateTime(case_.arrivalTime)}</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        Assigned to: {case_.assignedTo}
-                      </div>
-                    </div>
-                  </div>
+          {/* Emergency Cases */}
+          {filteredCases.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <Siren className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No Emergency Cases
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  {emergencyCases.length === 0 
+                    ? "No emergency cases have been registered yet. Click 'New Emergency Case' to register the first case."
+                    : "No emergency cases found matching your current filters. Try adjusting the status, priority, or date range filters."
+                  }
+                </p>
+                <div className="flex justify-center gap-3">
+                  <Button 
+                    className="bg-red-500 hover:bg-red-600"
+                    onClick={() => setRegisterDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Emergency Case
+                  </Button>
+                  {selectedPriority !== "all" && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setSelectedPriority("all")}
+                    >
+                      Show All Priorities
+                    </Button>
+                  )}
 
-                  <div className="mt-4">
-                    <div className="text-sm font-medium mb-2">Chief Complaint:</div>
-                    <div className="text-sm bg-gray-50 p-3 rounded-lg">{case_.chiefComplaint}</div>
-                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredCases.map((case_) => (
+                <Card key={case_.id} className="hover:shadow-lg transition-shadow border-l-4 border-l-red-500">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                          <div className="font-semibold text-lg">{case_.caseId}</div>
+                          <Badge className={getPriorityColor(case_.triagePriority)}>
+                            {case_.triagePriority}
+                          </Badge>
+                          <Badge className={getStatusColor(case_.status)}>
+                            {case_.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-gray-500" />
+                          <span className="font-medium">{case_.patientName}</span>
+                          <span className="text-sm text-gray-600">({case_.age}Y, {case_.gender})</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone className="h-4 w-4" />
+                          <span>{case_.phone}</span>
+                        </div>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Clock className="h-4 w-4 text-gray-500" />
+                          <span>{formatLocalDateTime(case_.arrivalTime)}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Assigned to: {case_.assignedTo}
+                        </div>
+                      </div>
+                    </div>
 
-                  <div className="mt-4 grid grid-cols-4 gap-4">
-                    <div className="bg-blue-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Heart className="h-4 w-4 text-blue-600" />
-                        <span className="text-xs font-medium">BP</span>
-                      </div>
-                      <div className="text-sm font-semibold">{case_.vitals.bp}</div>
+                    <div className="mt-4">
+                      <div className="text-sm font-medium mb-2">Chief Complaint:</div>
+                      <div className="text-sm bg-gray-50 p-3 rounded-lg">{case_.chiefComplaint}</div>
                     </div>
-                    <div className="bg-green-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Activity className="h-4 w-4 text-green-600" />
-                        <span className="text-xs font-medium">Pulse</span>
-                      </div>
-                      <div className="text-sm font-semibold">{case_.vitals.pulse}</div>
-                    </div>
-                    <div className="bg-yellow-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Zap className="h-4 w-4 text-yellow-600" />
-                        <span className="text-xs font-medium">Temp</span>
-                      </div>
-                      <div className="text-sm font-semibold">{case_.vitals.temp}</div>
-                    </div>
-                    <div className="bg-purple-50 p-3 rounded-lg text-center">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Activity className="h-4 w-4 text-purple-600" />
-                        <span className="text-xs font-medium">SpO2</span>
-                      </div>
-                      <div className="text-sm font-semibold">{case_.vitals.spo2}</div>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 flex gap-2">
-                    <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
-                      Update Status
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenFullChart(case_)}>
-                      View Full Chart
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
-                      Transfer
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
-                      Add/Update Vitals
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    <div className="mt-4 grid grid-cols-4 gap-4">
+                      <div className="bg-blue-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Heart className="h-4 w-4 text-blue-600" />
+                          <span className="text-xs font-medium">BP</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.bp}</div>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Activity className="h-4 w-4 text-green-600" />
+                          <span className="text-xs font-medium">Pulse</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.pulse}</div>
+                      </div>
+                      <div className="bg-yellow-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Zap className="h-4 w-4 text-yellow-600" />
+                          <span className="text-xs font-medium">Temp</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.temp}</div>
+                      </div>
+                      <div className="bg-purple-50 p-3 rounded-lg text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Activity className="h-4 w-4 text-purple-600" />
+                          <span className="text-xs font-medium">SpO2</span>
+                        </div>
+                        <div className="text-sm font-semibold">{case_.vitals.spo2}</div>
+                      </div>
+                    </div>
+
+                    {/* Transfer Status Display */}
+                    {case_.transferStatus === 'Transferred' && (
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge className="bg-blue-100 text-blue-800">Transferred</Badge>
+                          <span className="text-sm text-blue-700 font-medium">
+                            to {case_.transferTo}
+                          </span>
+                        </div>
+                        <div className="text-xs text-blue-600">
+                          <div>Reason: {case_.transferReason}</div>
+                          {case_.transferTime && (
+                            <div>Time: {new Date(case_.transferTime).toLocaleString()}</div>
+                          )}
+                          {case_.transferNotes && (
+                            <div>Notes: {case_.transferNotes}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex gap-2">
+                      {/* Go to Appointment button for Waiting/In Treatment cases */}
+                      {(case_.status === 'Waiting' || case_.status === 'In Treatment') && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/appointments?patientId=${case_.patientId}`} className="flex items-center gap-2">
+                            <ExternalLink className="h-4 w-4" />
+                            Go to Appointment
+                          </a>
+                        </Button>
+                      )}
+                      
+                      {/* Only show Update Status if not transferred */}
+                      {case_.transferStatus !== 'Transferred' && (
+                        <Button size="sm" className="bg-medical-500 hover:bg-medical-600" onClick={() => handleOpenStatusDialog(case_.id, case_.status)}>
+                          Update Status
+                        </Button>
+                      )}
+                      
+                      <Button variant="outline" size="sm" onClick={() => handleOpenFullChart(case_)}>
+                        View Full Chart
+                      </Button>
+                      
+                      {/* Transfer/View Transfer button logic */}
+                      {case_.transferStatus === 'Transferred' ? (
+                        <Button variant="outline" size="sm" onClick={() => handleViewTransferDetails(case_)}>
+                          View Transfer Details
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => handleOpenTransferDialog(case_)}>
+                          Transfer
+                        </Button>
+                      )}
+                      
+                      {/* Only show Add/Update Vitals if not transferred */}
+                      {case_.transferStatus !== 'Transferred' && (
+                        <Button variant="outline" size="sm" onClick={() => handleOpenVitalsDialog(case_)}>
+                          Add/Update Vitals
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="triage">
@@ -788,7 +1131,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Blood Pressure (BP)</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getBPStatus(fullChartCase.vitals.bp)==='normal' ? 'text-green-600' : getBPStatus(fullChartCase.vitals.bp)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.bp}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.bp}</span>
+                    <span className="text-xs text-gray-500">Normal: {getBloodPressureRangeText()}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getBPStatus(fullChartCase.vitals.bp)==='normal' ? 'bg-green-500' : getBPStatus(fullChartCase.vitals.bp)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -799,7 +1142,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Pulse</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getPulseStatus(fullChartCase.vitals.pulse)==='normal' ? 'text-green-600' : getPulseStatus(fullChartCase.vitals.pulse)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.pulse}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.pulse}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('heartRate')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getPulseStatus(fullChartCase.vitals.pulse)==='normal' ? 'bg-green-500' : getPulseStatus(fullChartCase.vitals.pulse)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -810,7 +1153,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">Temperature</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getTempStatus(fullChartCase.vitals.temp)==='normal' ? 'text-green-600' : getTempStatus(fullChartCase.vitals.temp)==='high' ? 'text-red-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.temp}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.temp}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('temperature')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getTempStatus(fullChartCase.vitals.temp)==='normal' ? 'bg-green-500' : getTempStatus(fullChartCase.vitals.temp)==='high' ? 'bg-red-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -821,7 +1164,7 @@ const Emergency = () => {
                   <div className="font-medium mb-1">SpO2</div>
                   <div className="flex items-center gap-2">
                     <div className={`text-lg font-bold ${getSpO2Status(fullChartCase.vitals.spo2)==='normal' ? 'text-green-600' : 'text-yellow-600'}`}>{fullChartCase.vitals.spo2}</div>
-                    <span className="text-xs text-gray-500">Normal: {vitalRanges.spo2}</span>
+                    <span className="text-xs text-gray-500">Normal: {getNormalRangeText('oxygenSaturation')}</span>
                   </div>
                   <div className="h-2 w-full rounded bg-gray-200 mt-2">
                     <div className={`h-2 rounded ${getSpO2Status(fullChartCase.vitals.spo2)==='normal' ? 'bg-green-500' : 'bg-yellow-500'}`} style={{width:'100%'}}></div>
@@ -881,6 +1224,7 @@ const Emergency = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Input placeholder="BP (e.g. 120/80)" value={vitalsBP} onChange={e => setVitalsBP(e.target.value)} />
+              <div className="text-xs text-gray-500 mt-1">Normal: {getBloodPressureRangeText()}</div>
               <Input placeholder="Pulse (bpm)" value={vitalsPulse} onChange={e => setVitalsPulse(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -895,6 +1239,74 @@ const Emergency = () => {
             </div>
             {vitalsError && <div className="text-red-500 text-sm">{vitalsError}</div>}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Details Dialog */}
+      <Dialog open={transferDetailsDialogOpen} onOpenChange={setTransferDetailsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5 text-blue-600" />
+              Transfer Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTransferCase && (
+            <div className="space-y-4">
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Badge className="bg-blue-100 text-blue-800">
+                    {selectedTransferCase.caseId}
+                  </Badge>
+                  <span className="font-medium">{selectedTransferCase.patientName}</span>
+                </div>
+                
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">Transferred to:</span>
+                    <div className="mt-1">
+                      <Badge className="bg-green-100 text-green-800">
+                        {selectedTransferCase.transferTo}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Transfer Time:</span>
+                    <div className="text-gray-600">
+                      {selectedTransferCase.transferTime ? 
+                        new Date(selectedTransferCase.transferTime).toLocaleString() : 
+                        'N/A'
+                      }
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Reason:</span>
+                    <div className="text-gray-600">{selectedTransferCase.transferReason}</div>
+                  </div>
+                  
+                  {selectedTransferCase.transferNotes && (
+                    <div>
+                      <span className="font-medium text-gray-700">Notes:</span>
+                      <div className="text-gray-600">{selectedTransferCase.transferNotes}</div>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <span className="font-medium text-gray-700">Original Complaint:</span>
+                    <div className="text-gray-600">{selectedTransferCase.chiefComplaint}</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end">
+                <Button onClick={() => setTransferDetailsDialogOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

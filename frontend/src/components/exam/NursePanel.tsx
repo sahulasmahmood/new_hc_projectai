@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, Clock, FileText, AlertCircle, Pill, ThermometerSun } from "lucide-react";
+import { useVitalsSettings } from "@/hooks/useVitalsSettings";
 
 interface NursePanelProps {
   patient: {
@@ -20,6 +21,7 @@ interface NursePanelProps {
 }
 
 const NursePanel = ({ patient }: NursePanelProps) => {
+  const { getNormalRangeText, getBloodPressureRangeText } = useVitalsSettings();
   const [vitals, setVitals] = useState({
     temperature: "",
     bloodPressure: "",
@@ -150,48 +152,53 @@ const NursePanel = ({ patient }: NursePanelProps) => {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Temperature (°F)</label>
                   <Input
-                    placeholder="98.6"
+                    placeholder="e.g., 98.6"
                     value={vitals.temperature}
-                    onChange={(e) => setVitals({...vitals, temperature: e.target.value})}
+                    onChange={(e) => setVitals({ ...vitals, temperature: e.target.value })}
                   />
+                  <div className="text-xs text-gray-500">Normal: {getNormalRangeText('temperature')}</div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Blood Pressure</label>
                   <Input
-                    placeholder="120/80"
+                    placeholder="e.g., 120/80"
                     value={vitals.bloodPressure}
-                    onChange={(e) => setVitals({...vitals, bloodPressure: e.target.value})}
+                    onChange={(e) => setVitals({ ...vitals, bloodPressure: e.target.value })}
                   />
+                  <div className="text-xs text-gray-500">Normal: {getBloodPressureRangeText()}</div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Heart Rate (bpm)</label>
                   <Input
-                    placeholder="72"
+                    placeholder="e.g., 72"
                     value={vitals.heartRate}
-                    onChange={(e) => setVitals({...vitals, heartRate: e.target.value})}
+                    onChange={(e) => setVitals({ ...vitals, heartRate: e.target.value })}
                   />
+                  <div className="text-xs text-gray-500">Normal: {getNormalRangeText('heartRate')}</div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Respiratory Rate</label>
                   <Input
-                    placeholder="16"
+                    placeholder="e.g., 16"
                     value={vitals.respiratoryRate}
-                    onChange={(e) => setVitals({...vitals, respiratoryRate: e.target.value})}
+                    onChange={(e) => setVitals({ ...vitals, respiratoryRate: e.target.value })}
                   />
+                  <div className="text-xs text-gray-500">Normal: {getNormalRangeText('respiratoryRate')}</div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Oxygen Saturation (%)</label>
                   <Input
-                    placeholder="98"
+                    placeholder="e.g., 98"
                     value={vitals.oxygenSaturation}
-                    onChange={(e) => setVitals({...vitals, oxygenSaturation: e.target.value})}
+                    onChange={(e) => setVitals({ ...vitals, oxygenSaturation: e.target.value })}
                   />
+                  <div className="text-xs text-gray-500">Normal: {getNormalRangeText('oxygenSaturation')}</div>
                 </div>
-                
+
                 <div className="flex items-end">
                   <Button className="w-full bg-medical-500 hover:bg-medical-600">
                     Record Vitals
@@ -254,7 +261,7 @@ const NursePanel = ({ patient }: NursePanelProps) => {
                   onChange={(e) => setCareNotes(e.target.value)}
                   className="min-h-32"
                 />
-                
+
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500">
                     Nurse: Current User • {new Date().toLocaleString()}
@@ -275,18 +282,18 @@ const NursePanel = ({ patient }: NursePanelProps) => {
                       <span className="text-sm text-gray-500">2024-01-20 14:30</span>
                     </div>
                     <p className="text-sm text-gray-700">
-                      Patient ambulating well. No complaints of pain. Vital signs stable. 
+                      Patient ambulating well. No complaints of pain. Vital signs stable.
                       Patient education provided regarding medication compliance.
                     </p>
                   </div>
-                  
+
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <div className="flex justify-between items-start mb-2">
                       <span className="font-medium">Sarah Wilson, RN</span>
                       <span className="text-sm text-gray-500">2024-01-20 08:15</span>
                     </div>
                     <p className="text-sm text-gray-700">
-                      Morning assessment completed. Patient alert and oriented. 
+                      Morning assessment completed. Patient alert and oriented.
                       Blood pressure elevated, notified physician. Medications given as scheduled.
                     </p>
                   </div>

@@ -1,0 +1,667 @@
+import { useState, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Trash2, Edit, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import MedicineSearch from "@/components/prescription/MedicineSearch";
+import api from "@/lib/api";
+
+interface Medication {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  timing: string;
+  duration: string;
+}
+
+interface Doctor {
+  id: number;
+  name: string;
+  qualification?: string;
+  role: string;
+  digitalSignature?: string;
+}
+
+interface EditingMedication {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  timing: string;
+  duration: string;
+}
+
+interface PrescriptionFormProps {
+  patientId: string;
+  patientName: string;
+  appointmentId?: string;
+  onSave?: (prescriptionData: unknown) => void;
+  onFormDataChange?: (hasData: boolean) => void;
+}
+
+const PrescriptionForm = ({ patientId, patientName, appointmentId, onSave, onFormDataChange }: PrescriptionFormProps) => {
+  const { toast } = useToast();
+
+  // Form state persistence key
+  const formStateKey = `prescription_form_${patientId}_${appointmentId || 'general'}`;
+
+  // Initialize state from localStorage if available
+  const getInitialFormState = () => {
+    try {
+      const saved = localStorage.getItem(formStateKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          medications: parsed.medications || [],
+          chiefComplaint: parsed.chiefComplaint || "",
+          investigations: parsed.investigations || "",
+          doctorNotes: parsed.doctorNotes || "",
+          advice: parsed.advice || ""
+        };
+      }
+    } catch (error) {
+      console.error("Error loading saved form state:", error);
+    }
+    return {
+      medications: [],
+      chiefComplaint: "",
+      investigations: "",
+      doctorNotes: "",
+      advice: ""
+    };
+  };
+
+  const initialState = getInitialFormState();
+  const [medications, setMedications] = useState<Medication[]>(initialState.medications);
+  const [chiefComplaint, setChiefComplaint] = useState(initialState.chiefComplaint);
+  const [investigations, setInvestigations] = useState(initialState.investigations);
+  const [doctorNotes, setDoctorNotes] = useState(initialState.doctorNotes);
+  const [advice, setAdvice] = useState(initialState.advice);
+  const [saving, setSaving] = useState(false);
+
+  // Simple data loss prevention
+  const hasFormData = () => {
+    return chiefComplaint.trim() || investigations.trim() || doctorNotes.trim() || advice.trim() || medications.length > 0;
+  };
+
+  // Auto-save form state to localStorage
+  useEffect(() => {
+    const formState = {
+      medications,
+      chiefComplaint,
+      investigations,
+      doctorNotes,
+      advice
+    };
+
+    const hasData = hasFormData();
+    if (hasData) {
+      localStorage.setItem(formStateKey, JSON.stringify(formState));
+    } else {
+      localStorage.removeItem(formStateKey);
+    }
+
+    // Notify parent component about form data changes
+    onFormDataChange?.(hasData);
+  }, [medications, chiefComplaint, investigations, doctorNotes, advice, formStateKey, onFormDataChange]);
+
+  // Clear saved state when prescription is successfully saved
+  const clearSavedState = () => {
+    localStorage.removeItem(formStateKey);
+  };
+  const [hospitalInfo, setHospitalInfo] = useState<{
+    name?: string;
+    phone?: string;
+    license?: string;
+    address?: string;
+  } | null>(null);
+  const [loadingHospitalInfo, setLoadingHospitalInfo] = useState(true);
+
+  const [editingMedication, setEditingMedication] = useState<EditingMedication | null>(null);
+  const [newMedication, setNewMedication] = useState({
+    name: "",
+    dosage: "",
+    frequency: "",
+    timing: "",
+    duration: ""
+  });
+
+  const [appointmentData, setAppointmentData] = useState<{
+    doctorId?: number;
+    doctorName?: string;
+  } | null>(null);
+
+  // Fetch hospital information and appointment data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch hospital info
+        const hospitalResponse = await api.get('/settings/hospital-settings');
+        setHospitalInfo(hospitalResponse.data);
+      } catch (error) {
+        console.error('Error fetching hospital settings:', error);
+        setHospitalInfo({
+          name: "MEDICAL CLINIC",
+          phone: "Emergency: Not Configured",
+          license: "Please configure in Hospital Settings"
+        });
+      } finally {
+        setLoadingHospitalInfo(false);
+      }
+
+      // Fetch appointment data if appointmentId is provided
+      if (appointmentId) {
+        try {
+          const appointmentResponse = await api.get(`/appointments/${appointmentId}`);
+          setAppointmentData({
+            doctorId: appointmentResponse.data.doctorId,
+            doctorName: appointmentResponse.data.doctorName
+          });
+        } catch (error) {
+          console.error('Error fetching appointment data:', error);
+        }
+      }
+    };
+
+    fetchData();
+  }, [appointmentId]);
+
+  const addMedication = () => {
+    if (!newMedication.name.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter medication name",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const medication: Medication = {
+      id: Date.now().toString(),
+      name: newMedication.name,
+      dosage: newMedication.dosage || "As directed",
+      frequency: newMedication.frequency || "As needed",
+      timing: newMedication.timing || "No meal restriction",
+      duration: newMedication.duration || "As prescribed"
+    };
+
+    setMedications([...medications, medication]);
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
+  };
+
+  const removeMedication = (id: string) => {
+    setMedications(medications.filter(med => med.id !== id));
+  };
+
+  const editMedication = (medication: Medication) => {
+    setEditingMedication(medication);
+    setNewMedication({
+      name: medication.name,
+      dosage: medication.dosage,
+      frequency: medication.frequency,
+      timing: medication.timing,
+      duration: medication.duration
+    });
+  };
+
+  const updateMedication = () => {
+    if (!editingMedication || !newMedication.name.trim()) return;
+
+    setMedications(medications.map(med =>
+      med.id === editingMedication.id
+        ? {
+          ...med,
+          name: newMedication.name,
+          dosage: newMedication.dosage || "As directed",
+          frequency: newMedication.frequency || "As needed",
+          timing: newMedication.timing || "No meal restriction",
+          duration: newMedication.duration || "As prescribed"
+        }
+        : med
+    ));
+
+    setEditingMedication(null);
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
+  };
+
+  const cancelEdit = () => {
+    setEditingMedication(null);
+    setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
+  };
+
+  const handleSave = async () => {
+
+
+    // Check if there's unsaved medicine data
+    const hasUnsavedMedicine = newMedication.name.trim() ||
+      newMedication.dosage.trim() ||
+      newMedication.frequency.trim() ||
+      newMedication.timing.trim() ||
+      newMedication.duration.trim();
+
+    if (hasUnsavedMedicine) {
+      toast({
+        title: "⚠️ Unsaved Medicine Details",
+        description: `You have entered medicine details "${newMedication.name}" but haven't added it to the prescription. Click "Add" to include it, or clear the fields to continue.`,
+        variant: "destructive",
+        duration: 8000
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+
+
+      const prescriptionData = {
+        patientId: parseInt(patientId),
+        appointmentId: appointmentId ? parseInt(appointmentId) : null,
+        chiefComplaint,
+        medications,
+        investigations,
+        doctorNotes,
+        advice,
+        doctorName: appointmentData?.doctorName || "System Generated", // Use doctor from appointment
+        doctorId: appointmentData?.doctorId
+      };
+
+      const response = await api.post('/prescriptions', prescriptionData);
+
+      if (onSave) {
+        onSave(response.data.prescription); // <-- Fix: pass only the prescription object
+      }
+
+      toast({
+        title: "✅ Prescription Saved Successfully",
+        description: "Prescription has been saved and consultation completed. The patient's consultation status has been updated.",
+        duration: 5000
+      });
+
+      // Clear form and saved state after successful save
+      setChiefComplaint("");
+      setMedications([]);
+      setInvestigations("");
+      setDoctorNotes("");
+      setAdvice("");
+      setNewMedication({ name: "", dosage: "", frequency: "", timing: "", duration: "" });
+      clearSavedState();
+      localStorage.removeItem('prescription_unsaved');
+    } catch (error) {
+      console.error('Error saving prescription:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save prescription. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      {hasFormData() && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="text-sm text-amber-800">
+            ⚠️ <strong>Prescription in progress</strong> - Avoid navigating away to prevent data loss
+          </div>
+        </div>
+      )}
+      <Card className="border-2 border-gray-300">
+        <CardContent className="p-8">
+          {/* Hospital Header */}
+          <div className="text-center border-b-2 border-gray-300 pb-4 mb-6">
+            {loadingHospitalInfo ? (
+              <div className="animate-pulse">
+                <div className="h-6 bg-gray-200 rounded mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-xl font-bold text-gray-900 mb-1">
+                  {hospitalInfo?.name?.toUpperCase() || "MEDICAL CLINIC"}
+                </h1>
+                <div className="text-xs text-gray-600">
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {hospitalInfo?.phone && (
+                      <span>Emergency: {hospitalInfo.phone}</span>
+                    )}
+                    {!hospitalInfo?.phone && (
+                      <span className="text-orange-600">Please configure Hospital Information in Settings</span>
+                    )}
+                  </div>
+                  {hospitalInfo?.address && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {hospitalInfo.address}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Patient Info */}
+          <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-200">
+            <div>
+              <h2 className="text-base font-semibold">Patient: {patientName}</h2>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-xs text-gray-600">ID: {patientId}</p>
+                {appointmentId && (
+                  <Badge className="bg-green-100 text-green-800 text-xs">
+                    Active Consultation
+                  </Badge>
+                )}
+              </div>
+              {appointmentData?.doctorName && (
+                <div className="mt-2 text-xs text-gray-600">
+                  <span className="font-medium">Doctor:</span> {appointmentData.doctorName}
+                </div>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-600">Date: {new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          {/* Form Sections */}
+          <div className="space-y-6">
+            {/* Chief Complaints & Diagnosis */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Chief Complaints & Diagnosis:
+              </label>
+              <Textarea
+                placeholder="Enter chief complaints and diagnosis (e.g., fever, cold, headache...)"
+                value={chiefComplaint}
+                onChange={(e) => setChiefComplaint(e.target.value)}
+                className="min-h-[70px] border-gray-300"
+              />
+            </div>
+
+            {/* Medication */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Medication:
+              </label>
+
+              {/* Medicine Search & Add Form - Moved to top for quick access */}
+              <div className="p-4 bg-gray-50 rounded border mb-4">
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-2">
+                    🔍 Search Items from Inventory
+                  </label>
+                  <MedicineSearch
+                    onSelectMedicine={(item) => {
+                      // Only set the item name, doctor customizes the rest
+                      setNewMedication({
+                        name: item.name,
+                        dosage: "",
+                        frequency: "",
+                        timing: "",
+                        duration: ""
+                      });
+                    }}
+                    placeholder="Type item name (medicines, syringes, devices, etc.)..."
+                    doctorId={appointmentData?.doctorId?.toString()}
+                  />
+                </div>
+
+                {/* Medicine Details Form - Doctor Customizes Everything */}
+                <div className="mt-3">
+                  <div className="text-xs font-medium text-gray-700 mb-2">
+                    {editingMedication ? '✏️ Editing Medicine' : '📝 Enter Medicine Details'}
+                  </div>
+                  <div className={`p-3 border rounded ${editingMedication ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
+                    }`}>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                      <Input
+                        placeholder="Medicine name"
+                        value={newMedication.name}
+                        onChange={(e) => setNewMedication({ ...newMedication, name: e.target.value })}
+                        className="text-sm"
+                      />
+                      <Input
+                        placeholder="Dosage (e.g., 500mg)"
+                        value={newMedication.dosage}
+                        onChange={(e) => setNewMedication({ ...newMedication, dosage: e.target.value })}
+                        className="text-sm"
+                      />
+
+                      {/* Frequency Dropdown - Only timing patterns */}
+                      <Select
+                        value={newMedication.frequency}
+                        onValueChange={(value) => setNewMedication({ ...newMedication, frequency: value })}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder="Frequency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Standard Medical Frequency Format (Morning-Noon-Night) */}
+                          <SelectItem value="1-0-0">1-0-0 (Once daily - Morning)</SelectItem>
+                          <SelectItem value="0-0-1">0-0-1 (Once daily - Night)</SelectItem>
+                          <SelectItem value="1-0-1">1-0-1 (Twice daily - Morning & Night)</SelectItem>
+                          <SelectItem value="1-1-0">1-1-0 (Twice daily - Morning & Noon)</SelectItem>
+                          <SelectItem value="0-1-1">0-1-1 (Twice daily - Noon & Night)</SelectItem>
+                          <SelectItem value="1-1-1">1-1-1 (Three times daily)</SelectItem>
+                          <SelectItem value="2-0-0">2-0-0 (Two tablets - Morning)</SelectItem>
+                          <SelectItem value="0-0-2">0-0-2 (Two tablets - Night)</SelectItem>
+                          <SelectItem value="2-0-2">2-0-2 (Four times daily - 2 Morning & 2 Night)</SelectItem>
+                          <SelectItem value="1-1-1-1">1-1-1-1 (Four times daily)</SelectItem>
+
+                          {/* Time-based alternatives */}
+                          <SelectItem value="Q4H">Q4H (Every 4 hours)</SelectItem>
+                          <SelectItem value="Q6H">Q6H (Every 6 hours)</SelectItem>
+                          <SelectItem value="Q8H">Q8H (Every 8 hours)</SelectItem>
+                          <SelectItem value="Q12H">Q12H (Every 12 hours)</SelectItem>
+
+                          {/* Special cases */}
+                          <SelectItem value="PRN">PRN (As needed)</SelectItem>
+                          <SelectItem value="STAT">STAT (Immediately)</SelectItem>
+                          <SelectItem value="SOS">SOS (If required)</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* Separate Timing Dropdown - Meal relationships */}
+                      <Select
+                        value={newMedication.timing}
+                        onValueChange={(value) => setNewMedication({ ...newMedication, timing: value })}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder="Timing" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="AC">AC (Before meals)</SelectItem>
+                          <SelectItem value="PC">PC (After meals)</SelectItem>
+                          <SelectItem value="HS">HS (At bedtime)</SelectItem>
+                          <SelectItem value="Empty stomach">Empty stomach</SelectItem>
+                          <SelectItem value="With food">With food</SelectItem>
+                          <SelectItem value="No meal restriction">No meal restriction</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* Duration with number + unit for better UX */}
+                      <div className="flex gap-1">
+                        <Input
+                          type="number"
+                          placeholder="5"
+                          value={newMedication.duration.split(' ')[0] || ''}
+                          onChange={(e) => {
+                            const number = e.target.value;
+                            const unit = newMedication.duration.split(' ')[1] || 'days';
+                            setNewMedication({ ...newMedication, duration: number ? `${number} ${unit}` : '' });
+                          }}
+                          className="text-sm w-16"
+                          min="1"
+                        />
+                        <Select
+                          value={newMedication.duration.split(' ')[1] || 'days'}
+                          onValueChange={(unit) => {
+                            const number = newMedication.duration.split(' ')[0] || '1';
+                            setNewMedication({ ...newMedication, duration: `${number} ${unit}` });
+                          }}
+                        >
+                          <SelectTrigger className="text-sm w-20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="days">days</SelectItem>
+                            <SelectItem value="weeks">weeks</SelectItem>
+                            <SelectItem value="months">months</SelectItem>
+                            <SelectItem value="doses">doses</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons - Separated for better UX */}
+                    <div className="flex justify-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                      <Button
+                        onClick={editingMedication ? updateMedication : addMedication}
+                        size="sm"
+                        className="px-6 bg-medical-500 hover:bg-medical-600"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        {editingMedication ? 'Update Medicine' : 'Add Medicine'}
+                      </Button>
+                      {editingMedication && (
+                        <Button
+                          onClick={cancelEdit}
+                          variant="outline"
+                          size="sm"
+                          className="px-4 hover:bg-red-50 border-red-200 text-red-600"
+                          title="Cancel editing"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    💡 <strong>Correct Healthcare Format:</strong> Frequency (how often) + Timing (meal relationship)
+                    <br />
+                    📋 <strong>Example:</strong> 1-0-1 (frequency) + AC (before meals) = Take 1 tablet morning & night before meals
+                  </div>
+                </div>
+              </div>
+
+              {/* Medication Table */}
+              <div className="border border-gray-300 rounded">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Medicine Name</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Dosage</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Frequency</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Timing</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Duration</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {medications.map((med) => (
+                      <tr key={med.id} className="border-t border-gray-200">
+                        <td className="px-3 py-2 text-sm">{med.name}</td>
+                        <td className="px-3 py-2 text-sm">{med.dosage}</td>
+                        <td className="px-3 py-2 text-sm">{med.frequency}</td>
+                        <td className="px-3 py-2 text-sm">{med.timing}</td>
+                        <td className="px-3 py-2 text-sm">{med.duration}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => editMedication(med)}
+                              className="text-blue-600 hover:text-blue-700 h-6 w-6 p-0"
+                              title="Edit medicine"
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeMedication(med.id)}
+                              className="text-red-600 hover:text-red-700 h-6 w-6 p-0"
+                              title="Remove medicine"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {medications.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-4 text-center text-gray-500 text-sm">
+                          No medications added yet. Use the form above to add medicines.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Investigations / Lab Tests */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Investigations / Lab Tests:
+              </label>
+              <Textarea
+                placeholder="Enter lab tests or investigations (e.g., blood test, X-ray...)"
+                value={investigations}
+                onChange={(e) => setInvestigations(e.target.value)}
+                className="min-h-[60px] border-gray-300"
+              />
+            </div>
+
+            {/* Doctor Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Doctor Notes:
+              </label>
+              <Textarea
+                placeholder="Enter doctor notes (e.g., drink hot water, rest...)"
+                value={doctorNotes}
+                onChange={(e) => setDoctorNotes(e.target.value)}
+                className="min-h-[60px] border-gray-300"
+              />
+            </div>
+
+            {/* Advice & Follow-Up */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Advice & Follow-Up:
+              </label>
+              <Textarea
+                placeholder="Enter advice and follow-up instructions (e.g., come next day...)"
+                value={advice}
+                onChange={(e) => setAdvice(e.target.value)}
+                className="min-h-[60px] border-gray-300"
+              />
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-center mt-6">
+            <Button
+              onClick={handleSave}
+              className="px-8 py-2 bg-medical-500 hover:bg-medical-600"
+              size="lg"
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Save Prescription'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default PrescriptionForm;

@@ -1,10 +1,41 @@
 const { PrismaClient } = require('../../generated/prisma');
+const { getPatientIdPrefix } = require("../../utils/patientIdGenerator");
 const prisma = new PrismaClient();
 
 // Get all emergency cases (with patient info)
 const getAllEmergencyCases = async (req, res) => {
   try {
+    const { status, priority, startDate, endDate } = req.query;
+    
+    // Build where clause for filtering
+    const whereClause = {};
+    
+    if (status && status !== 'all') {
+      whereClause.status = status;
+    }
+    
+    if (priority && priority !== 'all') {
+      whereClause.triagePriority = {
+        equals: priority,
+        mode: 'insensitive'
+      };
+    }
+    
+    // Date filtering based on arrivalTime
+    if (startDate || endDate) {
+      whereClause.arrivalTime = {};
+      
+      if (startDate) {
+        whereClause.arrivalTime.gte = new Date(startDate + 'T00:00:00.000Z');
+      }
+      
+      if (endDate) {
+        whereClause.arrivalTime.lte = new Date(endDate + 'T23:59:59.999Z');
+      }
+    }
+
     const cases = await prisma.emergencyCase.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         patient: true,
@@ -15,6 +46,7 @@ const getAllEmergencyCases = async (req, res) => {
     const transformed = cases.map((c) => ({
       id: c.id,
       caseId: `EM${c.id.toString().padStart(3, '0')}`,
+      patientId: c.patientId, // Add patientId for vitals saving
       patientName: c.patient?.name || '',
       age: c.patient?.age || '',
       gender: c.patient?.gender || '',
@@ -30,7 +62,12 @@ const getAllEmergencyCases = async (req, res) => {
         temp: c.vitals?.temp || '',
         spo2: c.vitals?.spo2 || '',
       },
-      // Add more fields if needed by frontend
+      // Transfer information
+      transferStatus: c.transferStatus,
+      transferTo: c.transferTo,
+      transferReason: c.transferReason,
+      transferNotes: c.transferNotes,
+      transferTime: c.transferTime?.toISOString() || null,
     }));
     res.json(transformed);
   } catch (error) {
@@ -57,6 +94,7 @@ const getEmergencyCaseById = async (req, res) => {
     const transformed = {
       id: c.id,
       caseId: `EM${c.id.toString().padStart(3, '0')}`,
+      patientId: c.patientId, // Add patientId for vitals saving
       patientName: c.patient?.name || '',
       age: c.patient?.age || '',
       gender: c.patient?.gender || '',
@@ -72,7 +110,12 @@ const getEmergencyCaseById = async (req, res) => {
         temp: c.vitals?.temp || '',
         spo2: c.vitals?.spo2 || '',
       },
-      // Add more fields if needed by frontend
+      // Transfer information
+      transferStatus: c.transferStatus,
+      transferTo: c.transferTo,
+      transferReason: c.transferReason,
+      transferNotes: c.transferNotes,
+      transferTime: c.transferTime?.toISOString() || null,
     };
     res.json(transformed);
   } catch (error) {
@@ -196,6 +239,20 @@ const transferEmergencyCase = async (req, res) => {
     if (!transferTo || !transferReason) {
       return res.status(400).json({ error: 'Missing required transfer fields' });
     }
+
+    // Check if already transferred
+    const existingCase = await prisma.emergencyCase.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!existingCase) {
+      return res.status(404).json({ error: 'Emergency case not found' });
+    }
+
+    if (existingCase.transferStatus === 'Transferred') {
+      return res.status(400).json({ error: 'Case has already been transferred' });
+    }
+
     const updatedCase = await prisma.emergencyCase.update({
       where: { id: parseInt(id) },
       data: {
@@ -204,13 +261,17 @@ const transferEmergencyCase = async (req, res) => {
         transferReason,
         transferNotes,
         transferTime: new Date(),
-        status: 'Transferred',
+        status: 'Transferred', // Update main status to reflect transfer
       },
       include: {
         patient: true,
         appointment: true,
       },
     });
+
+    // Log transfer in patient's medical history (if needed for audit)
+    console.log(`Emergency case ${id} transferred to ${transferTo} at ${new Date().toISOString()}`);
+
     res.json(updatedCase);
   } catch (error) {
     console.error('Error transferring emergency case:', error);
@@ -218,6 +279,44 @@ const transferEmergencyCase = async (req, res) => {
       return res.status(404).json({ error: 'Emergency case not found' });
     }
     res.status(500).json({ error: 'Failed to transfer emergency case' });
+  }
+};
+
+// Get transfer history for a patient (for audit purposes)
+const getPatientTransferHistory = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    const transferHistory = await prisma.emergencyCase.findMany({
+      where: {
+        patientId: parseInt(patientId),
+        transferStatus: 'Transferred'
+      },
+      orderBy: { transferTime: 'desc' },
+      select: {
+        id: true,
+        transferTo: true,
+        transferReason: true,
+        transferNotes: true,
+        transferTime: true,
+        chiefComplaint: true,
+        triagePriority: true,
+        arrivalTime: true,
+        status: true
+      }
+    });
+
+    const formatted = transferHistory.map(transfer => ({
+      ...transfer,
+      caseId: `EM${transfer.id.toString().padStart(3, '0')}`,
+      transferTime: transfer.transferTime?.toISOString(),
+      arrivalTime: transfer.arrivalTime.toISOString()
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error fetching transfer history:', error);
+    res.status(500).json({ error: 'Failed to fetch transfer history' });
   }
 };
 
@@ -241,19 +340,24 @@ const registerEmergencyCase = async (req, res) => {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Generate visibleId (APL-00001 ... APL-99999, then APL-A-00001 ...)
-      let prefix = "APL";
+      // Generate visibleId (PREFIX-00001 ... PREFIX-99999, then PREFIX-A-00001 ...)
+      let prefix;
+      try {
+        prefix = await getPatientIdPrefix();
+      } catch (error) {
+        throw new Error(`Unable to create patient: ${error.message}`);
+      }
       let letter = null;
       let number = 1;
       const lastPatient = await tx.patient.findFirst({
         where: {
           visibleId: {
-            startsWith: prefix
-          }
+            startsWith: prefix,
+          },
         },
         orderBy: {
-          visibleId: 'desc'
-        }
+          visibleId: "desc",
+        },
       });
       if (lastPatient && lastPatient.visibleId) {
         let match = lastPatient.visibleId.match(/^([A-Z]{3})-(\d{5})$/);
@@ -388,21 +492,45 @@ const registerEmergencyCase = async (req, res) => {
       slotDate = chosenSlot.slotStart;
       slotTime = chosenSlot.time;
 
-      // 2. Create appointment (double booking allowed for emergencies)
+      // 2. Find doctor information if assignedTo is provided
+      let doctorId = null;
+      let doctorName = null;
+      
+      if (emergencyCase.assignedTo && emergencyCase.assignedTo !== 'Unassigned') {
+        const assignedDoctor = await tx.staff.findFirst({
+          where: {
+            name: emergencyCase.assignedTo,
+            role: {
+              contains: 'Doctor',
+              mode: 'insensitive'
+            }
+          }
+        });
+        
+        if (assignedDoctor) {
+          doctorId = assignedDoctor.id;
+          doctorName = assignedDoctor.name;
+        }
+      }
+
+      // 3. Create appointment (double booking allowed for emergencies)
       const createdAppointment = await tx.appointment.create({
         data: {
           patientId: createdPatient.id,
           patientName: createdPatient.name,
           patientPhone: createdPatient.phone,
+          patientVisibleId: createdPatient.visibleId,
           date: slotDate,
           time: slotTime,
           type: appointment?.type || 'Emergency',
           duration: appointmentDuration, // Use dynamic duration
           status: appointment?.status || 'Confirmed',
           notes: appointment?.notes || `Auto-created for emergency (${emergencyCase.triagePriority})`,
+          doctorId: doctorId,
+          doctorName: doctorName,
         },
       });
-      // 3. Create emergency case
+      // 4. Create emergency case
       const createdCase = await tx.emergencyCase.create({
         data: {
           patientId: createdPatient.id,
@@ -417,7 +545,7 @@ const registerEmergencyCase = async (req, res) => {
         include: { patient: true, appointment: true },
       });
 
-      // 4. Update appointment to reference emergency case
+      // 5. Update appointment to reference emergency case
       await tx.appointment.update({
         where: { id: createdAppointment.id },
         data: { emergencyCaseId: createdCase.id },
@@ -439,5 +567,6 @@ module.exports = {
   updateEmergencyCase,
   deleteEmergencyCase,
   transferEmergencyCase,
+  getPatientTransferHistory,
   registerEmergencyCase,
 };

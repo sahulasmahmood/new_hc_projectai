@@ -14,8 +14,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^6.9.0",
     "@google/generative-ai": "^0.21.0",
+    "@prisma/client": "^6.9.0",
+    "@upstash/redis": "^1.35.3",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
@@ -23,8 +24,11 @@
     "groq-sdk": "^0.7.0",
     "handlebars": "^4.7.8",
     "inngest": "^3.38.0",
+    "json2csv": "^6.0.0-alpha.2",
     "multer": "^2.0.1",
+    "node-cron": "^3.0.3",
     "nodemailer": "^7.0.3",
+    "pdfkit": "^0.17.1",
     "prisma": "^6.9.0"
   },
   "devDependencies": {
