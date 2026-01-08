@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, User, Mail, Lock, Calendar } from "lucide-react";
+import { UserPlus, User, Mail, Lock, Calendar, HeartPulse } from "lucide-react";
 
 export default function SignUpForm() {
   const [formData, setFormData] = useState({
@@ -41,8 +41,11 @@ export default function SignUpForm() {
   return (
     <Card className="w-full max-w-md p-8 space-y-6 bg-white/80 backdrop-blur-lg border border-gray-100 rounded-xl shadow-lg animate-fadeIn">
       <div className="space-y-2 text-center">
-        <h2 className="text-3xl font-bold tracking-tight text-gray-900">Create Account</h2>
-        <p className="text-gray-500">Enter your details to get started</p>
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <HeartPulse className="h-8 w-8 text-medical-500" />
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">HealthCare <span className="text-medical-500">AI</span></h2>
+        </div>
+        <p className="text-gray-500">Create your account to get started</p>
       </div>
       <form onSubmit={handleSignUp} className="space-y-4">
         <div className="relative">

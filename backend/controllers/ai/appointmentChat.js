@@ -462,6 +462,8 @@ const performBooking = async (bookingData, conversationId) => {
         duration: appointmentSettings.defaultDuration,
         status: "Confirmed",
         notes: "Booked via AI Chat Assistant",
+        doctorId: bookingData.doctorId || null,
+        doctorName: bookingData.doctorName || null,
       },
     });
 
@@ -647,6 +649,8 @@ const bookAppointmentFromChat = async (req, res) => {
       type = "General Consultation",
       duration,
       conversationId = "default",
+      doctorId = null,
+      doctorName = null,
     } = req.body;
 
     // Validate required fields
@@ -807,6 +811,8 @@ const bookAppointmentFromChat = async (req, res) => {
         notes: "Booked via AI Chat Assistant",
         status: "Confirmed",
         patientId: patient.id,
+        doctorId: doctorId || null,
+        doctorName: doctorName || null,
       },
     });
 
