@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Heart, Mail, Lock } from "lucide-react";
+import { HeartPulse, Mail, Lock } from "lucide-react";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -36,8 +36,8 @@ export default function LoginForm() {
       <Card className="w-full max-w-md p-8 space-y-6 bg-white/80 backdrop-blur-lg border border-gray-100 rounded-xl shadow-lg animate-fadeIn">
         <div className="space-y-2 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Heart className="h-8 w-8 text-medical-500" />
-            <h2 className="text-3xl font-bold tracking-tight text-gray-900">HealthCare AI</h2>
+            <HeartPulse className="h-8 w-8 text-medical-500" />
+            <h2 className="text-3xl font-bold tracking-tight text-gray-900">HealthCare <span className="text-medical-500">AI</span></h2>
           </div>
           <p className="text-gray-500">Sign in to your account</p>
         </div>

@@ -70,16 +70,18 @@ const StaffStatusHistory: React.FC<StaffStatusHistoryProps> = ({
           startDate = now.toISOString().split('T')[0];
           endDate = startDate;
           break;
-        case 'week':
+        case 'week': {
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           startDate = weekAgo.toISOString().split('T')[0];
           endDate = now.toISOString().split('T')[0];
           break;
-        case 'month':
+        }
+        case 'month': {
           const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
           startDate = monthAgo.toISOString().split('T')[0];
           endDate = now.toISOString().split('T')[0];
           break;
+        }
         case 'custom':
           startDate = customDateRange.startDate;
           endDate = customDateRange.endDate;

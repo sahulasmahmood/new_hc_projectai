@@ -16,10 +16,38 @@ const CONVERSATION_STATES = {
   ASKING_DATE: "asking_date",
   SHOWING_SLOTS: "showing_slots",
   ASKING_TIME: "asking_time",
+  ASKING_DOCTOR: "asking_doctor",
   ASKING_APPOINTMENT_TYPE: "asking_appointment_type",
   COLLECTING_PATIENT_INFO: "collecting_patient_info",
   CONFIRMING_BOOKING: "confirming_booking",
   COMPLETED: "completed",
+};
+
+// Get available doctors from staff
+const getAvailableDoctors = async () => {
+  try {
+    const doctors = await prisma.staff.findMany({
+      where: {
+        OR: [
+          { role: { contains: "Doctor", mode: "insensitive" } },
+          { role: { contains: "Physician", mode: "insensitive" } },
+          { role: { contains: "MD", mode: "insensitive" } },
+        ],
+        status: "On Duty",
+      },
+      select: {
+        id: true,
+        name: true,
+        qualification: true,
+        role: true,
+      },
+      orderBy: { name: "asc" },
+    });
+    return doctors;
+  } catch (error) {
+    console.error("Error fetching doctors:", error);
+    return [];
+  }
 };
 
 // Enhanced AI parsing for intent-based appointment booking
@@ -105,7 +133,7 @@ CRITICAL:
           content: `Parse this message: "${message}"`,
         },
       ],
-      model: "llama3-8b-8192",
+      model: "llama-3.1-8b-instant",
       temperature: 0.1,
       max_tokens: 300,
     });
@@ -168,7 +196,7 @@ const normalizeTimeFormat = (timeStr) => {
 };
 
 // Get available appointment slots using the same logic as appointments page
-const getAvailableSlots = async (targetDate = null, timePreference = null) => {
+const getAvailableSlots = async (targetDate = null, timePreference = null, doctorId = null) => {
   try {
     const settings = await prisma.appointmentSettings.findFirst();
     if (!settings) {
@@ -200,7 +228,7 @@ const getAvailableSlots = async (targetDate = null, timePreference = null) => {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + (targetDate ? 0 : 7)); // Single day if specific date, 7 days if general
 
-    // Get existing appointments
+    // Get existing appointments - now including doctorId for per-doctor availability
     const existingAppointments = await prisma.appointment.findMany({
       where: {
         date: {
@@ -209,7 +237,7 @@ const getAvailableSlots = async (targetDate = null, timePreference = null) => {
         },
         status: { not: "Cancelled" },
       },
-      select: { date: true, time: true, duration: true },
+      select: { date: true, time: true, duration: true, doctorId: true },
     });
 
     const availableSlots = [];
@@ -223,7 +251,8 @@ const getAvailableSlots = async (targetDate = null, timePreference = null) => {
         settings,
         isToday,
         currentTime,
-        timePreference
+        timePreference,
+        doctorId // Pass doctorId for per-doctor filtering
       );
       availableSlots.push(...daySlots);
 
@@ -237,6 +266,269 @@ const getAvailableSlots = async (targetDate = null, timePreference = null) => {
   }
 };
 
+// Get available slots for a specific doctor
+const getAvailableSlotsForDoctor = async (targetDate = null, timePreference = null, doctorId = null) => {
+  try {
+    const settings = await prisma.appointmentSettings.findFirst();
+    if (!settings) {
+      throw new Error("Appointment settings not configured");
+    }
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+
+    let startDate;
+    if (targetDate) {
+      startDate = new Date(targetDate);
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      if (startDateOnly < today) {
+        return [];
+      }
+    } else {
+      startDate = new Date();
+    }
+
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + (targetDate ? 0 : 7));
+
+    // Get doctor's shift information if doctorId is provided
+    let doctorShift = null;
+    if (doctorId) {
+      const doctor = await prisma.staff.findUnique({
+        where: { id: doctorId },
+        include: { shiftTime: true }
+      });
+      if (doctor && doctor.shiftTime) {
+        doctorShift = doctor.shiftTime;
+      }
+    }
+
+    // Get existing appointments for this specific doctor
+    const whereClause = {
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+      status: { not: "Cancelled" },
+    };
+    
+    // If doctorId is provided, only get that doctor's appointments
+    if (doctorId) {
+      whereClause.doctorId = doctorId;
+    }
+
+    const existingAppointments = await prisma.appointment.findMany({
+      where: whereClause,
+      select: { date: true, time: true, duration: true, doctorId: true },
+    });
+
+    const availableSlots = [];
+    const currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      const isToday = currentDate.toDateString() === now.toDateString();
+      const daySlots = generateDaySlotsForDoctor(
+        currentDate,
+        existingAppointments,
+        settings,
+        isToday,
+        currentTime,
+        timePreference,
+        doctorId,
+        doctorShift
+      );
+      availableSlots.push(...daySlots);
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return availableSlots;
+  } catch (error) {
+    console.error("Error getting available slots for doctor:", error);
+    return [];
+  }
+};
+
+// Generate time slots for a specific doctor on a specific day
+const generateDaySlotsForDoctor = (
+  date,
+  existingAppointments,
+  settings,
+  isToday = false,
+  currentTime = 0,
+  timePreference = null,
+  doctorId = null,
+  doctorShift = null
+) => {
+  const slots = [];
+
+  if (!settings || !settings.timeSlots) {
+    console.error("No appointment settings or time slots found");
+    return slots;
+  }
+
+  let timeSlots = settings.timeSlots;
+  if (typeof timeSlots === "string") {
+    try {
+      timeSlots = JSON.parse(timeSlots);
+    } catch (error) {
+      console.error("Error parsing time slots:", error);
+      return slots;
+    }
+  }
+
+  const activeTimeSlots = timeSlots.filter((slot) => slot.isActive);
+
+  // Parse working hours - use doctor's shift if available, otherwise use global settings
+  let workingStart = settings.workingHoursStart || "08:00";
+  let workingEnd = settings.workingHoursEnd || "18:00";
+  
+  if (doctorShift) {
+    workingStart = doctorShift.startTime || workingStart;
+    workingEnd = doctorShift.endTime || workingEnd;
+  }
+
+  const breakStart = settings.breakStart || "12:00";
+  const breakEnd = settings.breakEnd || "13:00";
+
+  activeTimeSlots.forEach((slot) => {
+    const slotTime = slot.time;
+
+    const [timePart, period] = slotTime.split(" ");
+    let [hours, minutes] = timePart.split(":").map(Number);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+
+    const slotTimeString = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+    const slotTimeMinutes = hours * 60 + minutes;
+
+    // Skip if outside working hours
+    if (slotTimeString < workingStart || slotTimeString >= workingEnd) {
+      return;
+    }
+
+    // Skip if during break time
+    if (slotTimeString >= breakStart && slotTimeString < breakEnd) {
+      return;
+    }
+
+    // Skip past times if it's today
+    if (isToday && slotTimeMinutes <= currentTime) {
+      return;
+    }
+
+    // Check if slot matches time preference
+    if (timePreference) {
+      const matchesPreference = checkTimePreference(hours, timePreference);
+      if (!matchesPreference) return;
+    }
+
+    // Check if slot is available for this specific doctor
+    const isBooked = existingAppointments.some((apt) => {
+      const aptDate = new Date(apt.date);
+      const sameDate = aptDate.toDateString() === date.toDateString();
+      const sameTime = apt.time === slotTime;
+      
+      // If checking for specific doctor, only that doctor's appointments matter
+      if (doctorId) {
+        return sameDate && sameTime && apt.doctorId === doctorId;
+      }
+      // If no specific doctor (any available), slot is booked only if ALL doctors are booked
+      // This is handled differently - we'll check this in the calling function
+      return sameDate && sameTime;
+    });
+
+    if (!isBooked) {
+      slots.push({
+        date: date.toISOString().split("T")[0],
+        time: slotTime,
+        displayDate: date.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+        }),
+        timeCategory: getTimeCategory(hours),
+        doctorId: doctorId,
+      });
+    }
+  });
+
+  return slots;
+};
+
+// Get doctors available at a specific time slot
+const getDoctorsAvailableAtSlot = async (date, time) => {
+  try {
+    // Get all on-duty doctors
+    const allDoctors = await getAvailableDoctors();
+    
+    if (allDoctors.length === 0) {
+      return [];
+    }
+
+    // Get appointments at this specific date and time
+    const appointmentDate = new Date(date);
+    const existingAppointments = await prisma.appointment.findMany({
+      where: {
+        date: appointmentDate,
+        time: time,
+        status: { not: "Cancelled" },
+      },
+      select: { doctorId: true },
+    });
+
+    const bookedDoctorIds = existingAppointments
+      .filter(apt => apt.doctorId !== null)
+      .map(apt => apt.doctorId);
+
+    // Filter out doctors who are already booked at this time
+    const availableDoctors = allDoctors.filter(
+      doctor => !bookedDoctorIds.includes(doctor.id)
+    );
+
+    // Also check if doctors are within their shift hours
+    const settings = await prisma.appointmentSettings.findFirst();
+    const [timePart, period] = time.split(" ");
+    let [hours, minutes] = timePart.split(":").map(Number);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    const slotTimeString = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+
+    const doctorsInShift = [];
+    for (const doctor of availableDoctors) {
+      // Get doctor's shift
+      const doctorWithShift = await prisma.staff.findUnique({
+        where: { id: doctor.id },
+        include: { shiftTime: true }
+      });
+
+      if (doctorWithShift && doctorWithShift.shiftTime) {
+        const shiftStart = doctorWithShift.shiftTime.startTime;
+        const shiftEnd = doctorWithShift.shiftTime.endTime;
+        
+        // Check if slot is within doctor's shift
+        if (slotTimeString >= shiftStart && slotTimeString < shiftEnd) {
+          doctorsInShift.push(doctor);
+        }
+      } else {
+        // If no shift defined, use global working hours
+        const workingStart = settings?.workingHoursStart || "08:00";
+        const workingEnd = settings?.workingHoursEnd || "18:00";
+        
+        if (slotTimeString >= workingStart && slotTimeString < workingEnd) {
+          doctorsInShift.push(doctor);
+        }
+      }
+    }
+
+    return doctorsInShift;
+  } catch (error) {
+    console.error("Error getting doctors available at slot:", error);
+    return [];
+  }
+};
+
 // Generate time slots for a specific day using appointment settings (same as appointments page)
 const generateDaySlots = (
   date,
@@ -244,7 +536,8 @@ const generateDaySlots = (
   settings,
   isToday = false,
   currentTime = 0,
-  timePreference = null
+  timePreference = null,
+  doctorId = null
 ) => {
   const slots = [];
 
@@ -313,12 +606,22 @@ const generateDaySlots = (
       if (!matchesPreference) return;
     }
 
-    // Check if slot is available (not booked)
+    // Check if slot is available (considering doctor-specific booking)
     const isBooked = existingAppointments.some((apt) => {
       const aptDate = new Date(apt.date);
-      return (
-        aptDate.toDateString() === date.toDateString() && apt.time === slotTime
-      );
+      const sameDate = aptDate.toDateString() === date.toDateString();
+      const sameTime = apt.time === slotTime;
+      
+      if (!sameDate || !sameTime) return false;
+      
+      // If checking for specific doctor, only that doctor's appointments matter
+      if (doctorId) {
+        return apt.doctorId === doctorId;
+      }
+      
+      // If no specific doctor, consider slot booked only if it has no doctor assigned
+      // (legacy appointments without doctor) - slots with doctors are still available for other doctors
+      return apt.doctorId === null;
     });
 
     if (!isBooked) {
@@ -331,6 +634,7 @@ const generateDaySlots = (
           day: "numeric",
         }),
         timeCategory: getTimeCategory(hours),
+        doctorId: doctorId || null,
       });
     }
   });
@@ -503,12 +807,13 @@ const handleCompleteBookingRequest = async (parsed, context) => {
       }
 
       // We have everything, proceed to confirmation
+      const doctorDisplay = bookingData.doctorName || bookingData.doctorPreference || "Any Available Doctor";
       return {
-        message: `Perfect! Let me confirm your appointment details:\n\n📅 **Date & Time:** ${formatDate(
+        message: `Perfect! Let me confirm your appointment details:\n\n📅 Date & Time: ${formatDate(
           bookingData.selectedDate
-        )} at ${bookingData.selectedTime}\n👤 **Patient:** ${
+        )} at ${bookingData.selectedTime}\n👤 Patient: ${
           bookingData.patientName
-        }\n📞 **Phone:** ${bookingData.patientPhone}\n🏥 **Type:** ${
+        }\n📞 Phone: ${bookingData.patientPhone}\n👨‍⚕️ Doctor: ${doctorDisplay}\n🏥 Type: ${
           bookingData.appointmentType || "General Consultation"
         }\n\nShall I confirm this appointment booking?`,
         state: CONVERSATION_STATES.CONFIRMING_BOOKING,
@@ -529,11 +834,11 @@ const handleCompleteBookingRequest = async (parsed, context) => {
 
     let question;
     if (missingInfo.includes("name") && missingInfo.includes("phone number")) {
-      question = `Great! I can book you for ${appointmentDetails}.\n\n👤 **Please provide your full name and phone number** to complete the booking.\n\nExample: "John Smith, 9876543210"`;
+      question = `Great! I can book you for ${appointmentDetails}.\n\n👤 Please provide your full name and phone number to complete the booking.\n\nExample: "John Smith, 9876543210"`;
     } else if (missingInfo.includes("name")) {
-      question = `Perfect! Your ${appointmentDetails} slot is available.\n\n👤 **What name should I put the appointment under?**`;
+      question = `Perfect! Your ${appointmentDetails} slot is available.\n\n👤 What name should I put the appointment under?`;
     } else if (missingInfo.includes("phone number")) {
-      question = `Excellent! I have your appointment for ${appointmentDetails}.\n\n📞 **What's your phone number?**`;
+      question = `Excellent! I have your appointment for ${appointmentDetails}.\n\n📞 What's your phone number?`;
     } else {
       question = `Your ${appointmentDetails} slot is available! I just need a few more details.`;
     }
@@ -628,6 +933,10 @@ const processAppointmentChat = async (
         response = await handleTimeSelection(parsed, conversationContext);
         break;
 
+      case CONVERSATION_STATES.ASKING_DOCTOR:
+        response = await handleDoctorSelection(parsed, conversationContext);
+        break;
+
       case CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE:
         response = await handleAppointmentTypeSelection(
           parsed,
@@ -674,12 +983,12 @@ const handleGreeting = async (parsed, context) => {
     return {
       message:
         "🚨 I understand this is urgent. For emergency situations, please call our emergency line immediately or visit the nearest emergency room.\n\nIf this is not a life-threatening emergency, I can help you book an urgent appointment. Would you like me to check for the earliest available slot?",
-      state: CONVERSATION_STATES.ASKING_DATE,
+      state: CONVERSATION_STATES.ASKING_DOCTOR,
       urgency: "emergency",
       suggestedActions: ["emergency_booking", "contact_emergency"],
       conversationContext: {
         ...context,
-        state: CONVERSATION_STATES.ASKING_DATE,
+        state: CONVERSATION_STATES.ASKING_DOCTOR,
         bookingData: { isEmergency: true },
       },
     };
@@ -698,54 +1007,79 @@ const handleGreeting = async (parsed, context) => {
       patientPhone: parsed.patientPhone,
     };
 
-    // If we have date info, skip to showing slots
-    if (bookingData.selectedDate) {
-      const availableSlots = await getAvailableSlots(
-        bookingData.selectedDate,
-        parsed.timePreference
-      );
-
-      if (availableSlots.length > 0) {
-        return {
-          message: `Great! I found ${
-            availableSlots.length
-          } available slots for ${formatDate(
-            bookingData.selectedDate
-          )}:\n\n${availableSlots
-            .map((slot) => `• ${slot.time}`)
-            .join("\n")}\n\nWhich time works best for you?`,
-          state: CONVERSATION_STATES.SHOWING_SLOTS,
-          availableSlots: availableSlots, // Show ALL available slots
-          suggestedActions: ["Change Date", "Morning", "Afternoon", "Evening"],
-          conversationContext: {
-            ...context,
-            state: CONVERSATION_STATES.SHOWING_SLOTS,
-            bookingData,
-            availableSlots,
-          },
-        };
-      }
+    // NEW FLOW: Ask for doctor first before showing slots
+    context.state = CONVERSATION_STATES.ASKING_DOCTOR;
+    
+    // Load available doctors
+    const availableDoctors = await getAvailableDoctors();
+    
+    if (availableDoctors.length === 0) {
+      // No doctors available, skip to date selection with "Any Available" preset
+      context.bookingData = { ...bookingData, doctorPreference: "Any Available" };
+      context.state = CONVERSATION_STATES.ASKING_DATE;
+      
+      return {
+        message:
+          'Hello! I\'d be happy to help you book an appointment. 😊\n\nWhen would you like to schedule your appointment?\n\n📅 You can say:\n• "Today" (if available)\n• "Tomorrow"\n• "Next week"\n• Or a specific date like "January 31st"',
+        state: CONVERSATION_STATES.ASKING_DATE,
+        suggestedActions: ["Today", "Tomorrow", "Next Week"],
+        conversationContext: {
+          ...context,
+          state: CONVERSATION_STATES.ASKING_DATE,
+          bookingData: context.bookingData,
+        },
+      };
     }
 
-    // Default booking flow
-    context.state = CONVERSATION_STATES.ASKING_DATE;
+    // Show available doctors first
+    let doctorMessage = `Hello! I'd be happy to help you book an appointment. 😊\n\n👨‍⚕️ Which doctor would you like to see?\n\n`;
+    
+    availableDoctors.forEach((doctor, index) => {
+      const qualification = doctor.qualification ? ` (${doctor.qualification})` : '';
+      doctorMessage += `• ${doctor.name}${qualification}\n`;
+    });
+    
+    doctorMessage += `• Any Available Doctor\n`;
+    doctorMessage += `\n💡 Tip: Just type the doctor's name or "any" for the first available`;
+
+    context.availableDoctors = availableDoctors;
+    context.bookingData = bookingData;
+
     return {
-      message:
-        'Hello! I\'d be happy to help you book an appointment. 😊\n\nWhen would you like to schedule your appointment?\n\n📅 You can say:\n• "Today" (if available)\n• "Tomorrow"\n• "Next week"\n• Or a specific date like "January 31st"',
-      state: CONVERSATION_STATES.ASKING_DATE,
-      suggestedActions: ["today", "tomorrow", "next_week"],
+      message: doctorMessage,
+      state: CONVERSATION_STATES.ASKING_DOCTOR,
+      availableDoctors: availableDoctors,
+      suggestedActions: [...availableDoctors.map(d => d.name), "Any Available Doctor"],
       conversationContext: {
         ...context,
-        state: CONVERSATION_STATES.ASKING_DATE,
+        state: CONVERSATION_STATES.ASKING_DOCTOR,
         bookingData,
+        availableDoctors,
       },
     };
   }
 
-  // Default greeting
+  // Default greeting - also ask for doctor first
+  const availableDoctors = await getAvailableDoctors();
+  
+  if (availableDoctors.length === 0) {
+    return {
+      message:
+        'Hello! I\'m your AI appointment assistant. 👋\n\nI can help you:\n📅 Book new appointments\n🔄 Reschedule existing appointments\n❌ Cancel appointments\n📋 Check available slots\n\nWhat would you like to do today?\n\n💡 Tip: You can say something like "Book me tomorrow at 7:30 PM" for faster booking!',
+      state: CONVERSATION_STATES.GREETING,
+      suggestedActions: [
+        "book_appointment",
+        "check_availability",
+        "reschedule",
+        "cancel",
+      ],
+      conversationContext: context,
+    };
+  }
+
   return {
     message:
-      'Hello! I\'m your AI appointment assistant. 👋\n\nI can help you:\n📅 **Book new appointments**\n🔄 **Reschedule existing appointments**\n❌ **Cancel appointments**\n📋 **Check available slots**\n\nWhat would you like to do today?\n\n💡 **Tip:** You can say something like "Book me tomorrow at 7:30 PM" for faster booking!',
+      'Hello! I\'m your AI appointment assistant. 👋\n\nI can help you:\n📅 Book new appointments\n🔄 Reschedule existing appointments\n❌ Cancel appointments\n📋 Check available slots\n\nWhat would you like to do today?\n\n💡 Tip: You can say something like "Book appointment with Dr. Smith tomorrow at 7:30 PM" for faster booking!',
     state: CONVERSATION_STATES.GREETING,
     suggestedActions: [
       "book_appointment",
@@ -796,16 +1130,33 @@ const handleDateSelection = async (parsed, context) => {
       message:
         'I didn\'t catch the date you\'d prefer. Could you please specify when you\'d like your appointment?\n\n📅 You can say:\n• "Today"\n• "Tomorrow"\n• "Next Monday"\n• Or a specific date',
       state: CONVERSATION_STATES.ASKING_DATE,
-      suggestedActions: ["today", "tomorrow", "next_week"],
+      suggestedActions: ["Today", "Tomorrow", "Next Week"],
       conversationContext: context,
     };
   }
 
-  // Get available slots
-  const availableSlots = await getAvailableSlots(
-    targetDate,
-    parsed.timePreference
-  );
+  // Get available slots - use doctor-specific availability if doctor is selected
+  const doctorId = context.bookingData?.doctorId;
+  const doctorName = context.bookingData?.doctorName || context.bookingData?.doctorPreference;
+  
+  let availableSlots;
+  if (doctorId) {
+    // Get slots for specific doctor
+    availableSlots = await getAvailableSlotsForDoctor(
+      targetDate,
+      parsed.timePreference,
+      doctorId
+    );
+  } else {
+    // Get general slots (will show slots where at least one doctor is available)
+    availableSlots = await getAvailableSlots(
+      targetDate,
+      parsed.timePreference,
+      null
+    );
+  }
+
+  const doctorDisplay = doctorName || "Any Available Doctor";
 
   if (availableSlots.length === 0) {
     if (targetDate) {
@@ -829,16 +1180,20 @@ const handleDateSelection = async (parsed, context) => {
           message:
             "I can't book appointments for past dates. 📅\n\nLet me show you available slots for today and upcoming days. When would you prefer your appointment?",
           state: CONVERSATION_STATES.ASKING_DATE,
-          suggestedActions: ["today", "tomorrow", "next_week"],
+          suggestedActions: ["Today", "Tomorrow", "Next Week"],
           conversationContext: context,
         };
       }
     }
 
+    const noSlotsMessage = doctorId 
+      ? `Unfortunately, ${doctorDisplay} has no available slots for ${dateMessage}. 😔\n\nWould you like to:\n• Try a different date\n• Choose a different doctor`
+      : `Unfortunately, there are no available slots for ${dateMessage}. 😔\n\nWould you like me to check other dates?`;
+
     return {
-      message: `Unfortunately, there are no available slots for ${dateMessage}. 😔\n\nWould you like me to check other dates? I can show you the next available appointments.`,
+      message: noSlotsMessage,
       state: CONVERSATION_STATES.ASKING_DATE,
-      suggestedActions: ["check_other_dates", "next_available"],
+      suggestedActions: doctorId ? ["Tomorrow", "Next Week", "Change Doctor"] : ["Tomorrow", "Next Week"],
       conversationContext: context,
     };
   }
@@ -854,7 +1209,9 @@ const handleDateSelection = async (parsed, context) => {
     (slot) => slot.timeCategory === "Evening"
   );
 
-  let slotsMessage = `Great! I found ${availableSlots.length} available slots for ${dateMessage}:\n\n`;
+  let slotsMessage = doctorId 
+    ? `Great! I found ${availableSlots.length} available slots for ${doctorDisplay} on ${dateMessage}:\n\n`
+    : `Great! I found ${availableSlots.length} available slots for ${dateMessage}:\n\n`;
 
   // Smart display logic - show more slots in a compact format
   const totalSlots = availableSlots.length;
@@ -867,7 +1224,7 @@ const handleDateSelection = async (parsed, context) => {
   } else {
     // Show slots by category with pagination-like display
     if (morningSlots.length > 0) {
-      slotsMessage += `🌅 **Morning:** `;
+      slotsMessage += `🌅 Morning: `;
       slotsMessage += morningSlots
         .slice(0, 4)
         .map((slot) => slot.time)
@@ -878,7 +1235,7 @@ const handleDateSelection = async (parsed, context) => {
     }
 
     if (afternoonSlots.length > 0) {
-      slotsMessage += `☀️ **Afternoon:** `;
+      slotsMessage += `☀️ Afternoon: `;
       slotsMessage += afternoonSlots
         .slice(0, 4)
         .map((slot) => slot.time)
@@ -889,7 +1246,7 @@ const handleDateSelection = async (parsed, context) => {
     }
 
     if (eveningSlots.length > 0) {
-      slotsMessage += `🌙 **Evening:** `;
+      slotsMessage += `🌙 Evening: `;
       slotsMessage += eveningSlots
         .slice(0, 4)
         .map((slot) => slot.time)
@@ -935,34 +1292,52 @@ const handleSlotSelection = async (parsed, context) => {
   if (selectedSlot) {
     console.log(`🔍 Checking real-time availability for ${selectedSlot.time} on ${selectedSlot.date}`);
     
-    // Check if the slot is still available
-    const existingAppointment = await prisma.appointment.findFirst({
-      where: {
-        date: {
-          equals: new Date(selectedSlot.date)
-        },
-        time: {
-          equals: selectedSlot.time
-        },
-        status: {
-          notIn: ["Cancelled", "Completed"]
-        }
+    // Check if the slot is still available for the selected doctor
+    const doctorId = context.bookingData?.doctorId;
+    const whereClause = {
+      date: {
+        equals: new Date(selectedSlot.date)
+      },
+      time: {
+        equals: selectedSlot.time
+      },
+      status: {
+        notIn: ["Cancelled", "Completed"]
       }
+    };
+    
+    // If specific doctor is selected, check only that doctor's appointments
+    if (doctorId) {
+      whereClause.doctorId = doctorId;
+    }
+    
+    const existingAppointment = await prisma.appointment.findFirst({
+      where: whereClause
     });
 
     if (existingAppointment) {
-      console.log(`❌ Slot ${selectedSlot.time} was just taken`);
+      const doctorName = context.bookingData?.doctorName || "the doctor";
+      console.log(`❌ Slot ${selectedSlot.time} was just taken for ${doctorName}`);
       
-      // Get next available slots
-      const nextSlots = await getAvailableSlots(selectedSlot.date);
+      // Get next available slots for this doctor
+      const nextSlots = doctorId 
+        ? await getAvailableSlotsForDoctor(selectedSlot.date, null, doctorId)
+        : await getAvailableSlots(selectedSlot.date);
+      
       const availableSlots = nextSlots.filter(slot => 
         !context.availableSlots.some(s => s.time === slot.time && s.date === slot.date)
       );
 
+      const message = doctorId
+        ? `I apologize, but that time slot was just taken for ${doctorName}. Here are some other available times:\n\n${
+            availableSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+          }\n\nWould you like any of these times instead?`
+        : `I apologize, but that time slot was just taken. Here are some other available times:\n\n${
+            availableSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+          }\n\nWould you like any of these times instead?`;
+
       return {
-        message: `I apologize, but that time slot was just taken by another patient. Here are some other available times:\n\n${
-          availableSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
-        }\n\nWould you like any of these times instead?`,
+        message: message,
         conversationContext: {
           ...context,
           state: CONVERSATION_STATES.SHOWING_SLOTS,
@@ -1135,76 +1510,64 @@ const handleSlotSelection = async (parsed, context) => {
     const hasPatientInfo =
       context.bookingData.patientName && context.bookingData.patientPhone;
 
-    if (hasPatientInfo) {
-      // We have patient info, ask for appointment type with dynamic loading
-      context.state = CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE;
+    // NEW FLOW: Doctor is already selected before date/time
+    // After slot selection, go to appointment type
+    const hasDoctor = context.bookingData?.doctorId !== undefined || 
+                      context.bookingData?.doctorName || 
+                      context.bookingData?.doctorPreference;
+    
+    const doctorDisplay = context.bookingData?.doctorName || context.bookingData?.doctorPreference || "Any Available Doctor";
 
-      // Load appointment types from database only
+    if (hasPatientInfo) {
+      // We have patient info, check if we have appointment type
+      const hasAppointmentType = context.bookingData?.appointmentType && 
+                                  context.bookingData.appointmentType !== "null";
+      
+      if (hasAppointmentType) {
+        // We have everything, go to confirmation
+        context.state = CONVERSATION_STATES.CONFIRMING_BOOKING;
+        
+        return {
+          message: `Perfect! Let me confirm your appointment details:\n\n📅 Date & Time: ${matchingSlot.displayDate} at ${matchingSlot.time}\n👤 Patient: ${context.bookingData.patientName}\n📞 Phone: ${context.bookingData.patientPhone}\n👨‍⚕️ Doctor: ${doctorDisplay}\n🏥 Type: ${context.bookingData.appointmentType}\n\nShall I confirm this appointment booking?`,
+          state: CONVERSATION_STATES.CONFIRMING_BOOKING,
+          suggestedActions: ["Yes", "No"],
+          conversationContext: context,
+        };
+      }
+      
+      // Ask for appointment type
+      context.state = CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE;
+      
+      // Load appointment types from database
       let availableTypes = [];
       try {
         const settings = await prisma.appointmentSettings.findFirst();
-        if (
-          settings &&
-          settings.appointmentTypes &&
-          Array.isArray(settings.appointmentTypes)
-        ) {
+        if (settings && settings.appointmentTypes && Array.isArray(settings.appointmentTypes)) {
           availableTypes = settings.appointmentTypes;
-          console.log(
-            "✅ Loaded appointment types from database for slot selection:",
-            availableTypes
-          );
-        } else {
-          console.error(
-            "❌ No appointment types configured in database settings"
-          );
-          return {
-            message:
-              "❌ **Configuration Error**\n\nAppointment types are not configured in the system settings. Please contact the administrator to configure appointment types before booking appointments.",
-            state: CONVERSATION_STATES.GREETING,
-            conversationContext: {
-              ...context,
-              state: CONVERSATION_STATES.GREETING,
-              bookingData: {},
-            },
-          };
         }
       } catch (error) {
         console.error("Error loading appointment types:", error);
-        return {
-          message:
-            "❌ **System Error**\n\nUnable to load appointment types from database. Please try again or contact support.",
-          state: CONVERSATION_STATES.GREETING,
-          conversationContext: {
-            ...context,
-            state: CONVERSATION_STATES.GREETING,
-            bookingData: {},
-          },
-        };
       }
 
-      // Format the appointment types message like time slots
-      let typesMessage = `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate}. ✅\n\nWhat type of appointment would you like?\n\n`;
-
-      // Show all types as selectable options (like time slots)
-      availableTypes.forEach((type, index) => {
-        typesMessage += `• **${type}**\n`;
+      let typesMessage = `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate} with ${doctorDisplay}. ✅\n\n🏥 What type of appointment would you like?\n\n`;
+      availableTypes.forEach((type) => {
+        typesMessage += `• ${type}\n`;
       });
-
-      typesMessage += `\n💡 **Tip:** Just type the name (e.g., "consultation") or number (e.g., "1")`;
+      typesMessage += `\n💡 Tip: Just type the name (e.g., "consultation")`;
 
       return {
         message: typesMessage,
         state: CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE,
         selectedSlot: matchingSlot,
         availableTypes: availableTypes,
-        suggestedActions: availableTypes, // Show ALL appointment types as selectable (like time slots)
+        suggestedActions: availableTypes,
         conversationContext: context,
       };
     } else {
       // We need patient info first
       context.state = CONVERSATION_STATES.COLLECTING_PATIENT_INFO;
       return {
-        message: `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate}. ✅\n\n👤 **I need your name and phone number to complete the booking.**\n\nPlease provide both (e.g., "John Smith, 9876543210")`,
+        message: `Perfect! I'll book you for ${matchingSlot.time} on ${matchingSlot.displayDate} with ${doctorDisplay}. ✅\n\n👤 I need your name and phone number to complete the booking.\n\nPlease provide both (e.g., "John Smith, 9876543210")`,
         state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
         selectedSlot: matchingSlot,
         conversationContext: context,
@@ -1291,10 +1654,10 @@ const handleSlotSelection = async (parsed, context) => {
 
   return {
     message: `I didn't catch which time you selected. Please let me know which time you'd prefer:\n\n${context.availableSlots
-      .map((slot) => `• **${slot.time}**`)
+      .map((slot) => `• ${slot.time}`)
       .join(
         "\n"
-      )}\n\n⏰ **Click on a time above** or type the exact time (e.g., "7:00 PM")`,
+      )}\n\n⏰ Click on a time above or type the exact time (e.g., "7:00 PM")`,
     state: CONVERSATION_STATES.SHOWING_SLOTS,
     availableSlots: context.availableSlots, // Show ALL available slots
     conversationContext: context,
@@ -1305,6 +1668,161 @@ const handleSlotSelection = async (parsed, context) => {
 const handleTimeSelection = async (parsed, context) => {
   // This is handled in handleSlotSelection
   return handleSlotSelection(parsed, context);
+};
+
+// Handle doctor selection
+const handleDoctorSelection = async (parsed, context) => {
+  console.log(`👨‍⚕️ Handling doctor selection - User message: "${parsed.originalMessage}"`);
+  
+  const userMessage = parsed.originalMessage.trim().toLowerCase();
+  const availableDoctors = context.availableDoctors || await getAvailableDoctors();
+  
+  let selectedDoctor = null;
+  
+  // Check for "any" or "any available" selection
+  if (userMessage.includes("any") || userMessage.includes("no preference")) {
+    console.log(`✅ User selected "Any Available Doctor"`);
+    context.bookingData = context.bookingData || {};
+    context.bookingData.doctorId = null;
+    context.bookingData.doctorName = null;
+    context.bookingData.doctorPreference = "Any Available";
+  } else {
+    // Try to match with available doctors
+    for (const doctor of availableDoctors) {
+      const doctorNameLower = doctor.name.toLowerCase();
+      if (
+        userMessage === doctorNameLower ||
+        userMessage.includes(doctorNameLower) ||
+        doctorNameLower.includes(userMessage) ||
+        // Also check for partial matches (first name or last name)
+        doctorNameLower.split(' ').some(part => userMessage.includes(part) && part.length > 2)
+      ) {
+        selectedDoctor = doctor;
+        break;
+      }
+    }
+    
+    // Also try number selection
+    if (!selectedDoctor) {
+      const numberMatch = userMessage.match(/^(\d+)$/);
+      if (numberMatch) {
+        const index = parseInt(numberMatch[1]) - 1;
+        if (index >= 0 && index < availableDoctors.length) {
+          selectedDoctor = availableDoctors[index];
+        }
+      }
+    }
+    
+    if (selectedDoctor) {
+      console.log(`✅ Selected doctor: ${selectedDoctor.name} (ID: ${selectedDoctor.id})`);
+      context.bookingData = context.bookingData || {};
+      context.bookingData.doctorId = selectedDoctor.id;
+      context.bookingData.doctorName = selectedDoctor.name;
+      context.bookingData.doctorPreference = selectedDoctor.name;
+    } else {
+      // No match found, show options again
+      let doctorMessage = `I couldn't find that doctor. Please select from the available doctors:\n\n`;
+      
+      availableDoctors.forEach((doctor, index) => {
+        const qualification = doctor.qualification ? ` (${doctor.qualification})` : '';
+        doctorMessage += `• ${doctor.name}${qualification}\n`;
+      });
+      
+      doctorMessage += `• Any Available Doctor\n`;
+      doctorMessage += `\n💡 Tip: Just type the doctor's name or "any"`;
+
+      return {
+        message: doctorMessage,
+        state: CONVERSATION_STATES.ASKING_DOCTOR,
+        availableDoctors: availableDoctors,
+        suggestedActions: [...availableDoctors.map(d => d.name), "Any Available Doctor"],
+        conversationContext: context,
+      };
+    }
+  }
+  
+  const doctorDisplay = selectedDoctor ? selectedDoctor.name : "Any Available Doctor";
+  
+  // NEW FLOW: After doctor selection, ask for date
+  // Check if we already have date and time from initial request
+  if (context.bookingData.selectedDate && context.bookingData.selectedTime) {
+    // We have date and time, verify slot is available for this doctor
+    const doctorId = context.bookingData.doctorId;
+    const availableSlots = await getAvailableSlotsForDoctor(
+      context.bookingData.selectedDate,
+      null,
+      doctorId
+    );
+    
+    const requestedSlot = availableSlots.find(
+      slot => slot.time === context.bookingData.selectedTime
+    );
+    
+    if (requestedSlot) {
+      // Slot is available, proceed to appointment type
+      context.state = CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE;
+      
+      let availableTypes = [];
+      try {
+        const settings = await prisma.appointmentSettings.findFirst();
+        if (settings && settings.appointmentTypes && Array.isArray(settings.appointmentTypes)) {
+          availableTypes = settings.appointmentTypes;
+        }
+      } catch (error) {
+        console.error("Error loading appointment types:", error);
+      }
+
+      let typesMessage = `Great! I'll book your appointment with ${doctorDisplay} for ${context.bookingData.selectedTime} on ${formatDate(context.bookingData.selectedDate)}. ✅\n\n🏥 What type of appointment would you like?\n\n`;
+      
+      availableTypes.forEach((type) => {
+        typesMessage += `• ${type}\n`;
+      });
+      
+      typesMessage += `\n💡 Tip: Just type the name (e.g., "consultation")`;
+
+      return {
+        message: typesMessage,
+        state: CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE,
+        availableTypes: availableTypes,
+        suggestedActions: availableTypes,
+        conversationContext: context,
+      };
+    } else {
+      // Requested slot not available for this doctor, show available slots
+      context.state = CONVERSATION_STATES.SHOWING_SLOTS;
+      context.availableSlots = availableSlots;
+      
+      if (availableSlots.length === 0) {
+        return {
+          message: `I'm sorry, ${doctorDisplay} has no available slots on ${formatDate(context.bookingData.selectedDate)}.\n\nWould you like to:\n• Try a different date\n• Choose a different doctor`,
+          state: CONVERSATION_STATES.ASKING_DATE,
+          suggestedActions: ["Today", "Tomorrow", "Next Week", "Change Doctor"],
+          conversationContext: {
+            ...context,
+            state: CONVERSATION_STATES.ASKING_DATE,
+          },
+        };
+      }
+      
+      return {
+        message: `The ${context.bookingData.selectedTime} slot is not available for ${doctorDisplay}.\n\nHere are the available slots:\n\n${availableSlots.map(slot => `• ${slot.time}`).join('\n')}\n\nWhich time works for you?`,
+        state: CONVERSATION_STATES.SHOWING_SLOTS,
+        availableSlots: availableSlots,
+        suggestedActions: availableSlots.slice(0, 5).map(s => s.time),
+        conversationContext: context,
+      };
+    }
+  }
+  
+  // No date selected yet, ask for date
+  context.state = CONVERSATION_STATES.ASKING_DATE;
+  
+  return {
+    message: `Great choice! I'll book your appointment with ${doctorDisplay}. ✅\n\n📅 When would you like to schedule your appointment?\n\nYou can say:\n• "Today" (if available)\n• "Tomorrow"\n• "Next week"\n• Or a specific date like "January 15th"`,
+    state: CONVERSATION_STATES.ASKING_DATE,
+    suggestedActions: ["Today", "Tomorrow", "Next Week"],
+    conversationContext: context,
+  };
 };
 
 // Handle appointment type selection with modern UX
@@ -1443,7 +1961,7 @@ const handleAppointmentTypeSelection = async (parsed, context) => {
       // Return error instead of fallback
       return {
         message:
-          "❌ **Configuration Error**\n\nAppointment types are not configured in the system settings. Please contact the administrator to configure appointment types before booking appointments.",
+          "❌ Configuration Error\n\nAppointment types are not configured in the system settings. Please contact the administrator to configure appointment types before booking appointments.",
         state: CONVERSATION_STATES.GREETING,
         conversationContext: {
           ...context,
@@ -1568,7 +2086,7 @@ const handleAppointmentTypeSelection = async (parsed, context) => {
         context.state = CONVERSATION_STATES.COLLECTING_PATIENT_INFO;
 
         return {
-          message: `Perfect! I'll book this as a **${selectedType}**.\n\n👤 **Now I need your details to complete the booking:**\n\n📝 Please provide your **full name and phone number** in one message\n💡 **Example:** "John Smith, 9876543210"\n\n⚠️ **Both name and phone are required to proceed.**`,
+          message: `Perfect! I'll book this as a ${selectedType}.\n\n👤 Now I need your details to complete the booking:\n\n📝 Please provide your full name and phone number in one message\n💡 Example: "John Smith, 9876543210"\n\n⚠️ Both name and phone are required to proceed.`,
           state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
           conversationContext: context,
         };
@@ -1589,10 +2107,51 @@ const handleAppointmentTypeSelection = async (parsed, context) => {
 
           context.state = CONVERSATION_STATES.COLLECTING_PATIENT_INFO;
           return {
-            message: `Perfect! I'll book this as a **${selectedType}**.\n\n👤 **Now I need your details to complete the booking:**\n\n📝 Please provide your **full name and phone number** in one message\n💡 **Example:** "John Smith, 9876543210"\n\n⚠️ **Both name and phone are required to proceed.**`,
+            message: `Perfect! I'll book this as a ${selectedType}.\n\n👤 Now I need your details to complete the booking:\n\n📝 Please provide your full name and phone number in one message\n💡 Example: "John Smith, 9876543210"\n\n⚠️ Both name and phone are required to proceed.`,
             state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
             conversationContext: context,
           };
+        }
+
+        // Check if we have doctor selected
+        const hasDoctor =
+          context.bookingData.doctorId !== undefined ||
+          context.bookingData.doctorName ||
+          context.bookingData.doctorPreference;
+
+        if (!hasDoctor) {
+          console.log(`❌ Doctor not selected - redirecting to doctor selection`);
+          context.state = CONVERSATION_STATES.ASKING_DOCTOR;
+
+          // Load available doctors
+          const availableDoctors = await getAvailableDoctors();
+          
+          if (availableDoctors.length === 0) {
+            // No doctors available, skip to confirmation
+            console.log("⚠️ No doctors available, skipping doctor selection");
+            context.bookingData.doctorPreference = "Any Available";
+          } else {
+            // Show available doctors
+            let doctorMessage = `Perfect! I'll book this as a ${selectedType}.\n\n👨‍⚕️ Which doctor would you like to see?\n\n`;
+            
+            availableDoctors.forEach((doctor, index) => {
+              const qualification = doctor.qualification ? ` (${doctor.qualification})` : '';
+              doctorMessage += `• ${doctor.name}${qualification}\n`;
+            });
+            
+            doctorMessage += `• Any Available Doctor\n`;
+            doctorMessage += `\n💡 Tip: Just type the doctor's name or "any"`;
+
+            context.availableDoctors = availableDoctors;
+
+            return {
+              message: doctorMessage,
+              state: CONVERSATION_STATES.ASKING_DOCTOR,
+              availableDoctors: availableDoctors,
+              suggestedActions: [...availableDoctors.map(d => d.name), "Any Available Doctor"],
+              conversationContext: context,
+            };
+          }
         }
 
         // We have patient info, proceed to confirmation
@@ -1611,9 +2170,10 @@ const handleAppointmentTypeSelection = async (parsed, context) => {
           context.bookingData.selectedSlot?.time ||
           context.bookingData.selectedTime ||
           "Selected time";
+        const doctorDisplay = context.bookingData.doctorName || context.bookingData.doctorPreference || "Any Available Doctor";
 
         return {
-          message: `Perfect! Let me confirm your appointment details:\n\n📅 **Date & Time:** ${appointmentDate} at ${appointmentTime}\n👤 **Patient:** ${context.bookingData.patientName}\n📞 **Phone:** ${context.bookingData.patientPhone}\n🏥 **Type:** ${selectedType}\n\nShall I confirm this appointment booking?`,
+          message: `Perfect! Let me confirm your appointment details:\n\n📅 Date & Time: ${appointmentDate} at ${appointmentTime}\n👤 Patient: ${context.bookingData.patientName}\n📞 Phone: ${context.bookingData.patientPhone}\n👨‍⚕️ Doctor: ${doctorDisplay}\n🏥 Type: ${selectedType}\n\nShall I confirm this appointment booking?`,
           state: CONVERSATION_STATES.CONFIRMING_BOOKING,
           suggestedActions: ["Yes", "No"],
           conversationContext: context,
@@ -1625,10 +2185,10 @@ const handleAppointmentTypeSelection = async (parsed, context) => {
 
       // Show all types with numbers for easy selection (like time slots)
       availableTypes.forEach((type, index) => {
-        typesMessage += `• **${type}**\n`;
+        typesMessage += `• ${type}\n`;
       });
 
-      typesMessage += `\n💡 **Tip:** Just type the name (e.g., "consultation") or number (e.g., "1" for first option)`;
+      typesMessage += `\n💡 Tip: Just type the name (e.g., "consultation") or number (e.g., "1" for first option)`;
 
       console.log(
         `📋 Displaying all ${availableTypes.length} appointment types from database`
@@ -1836,15 +2396,15 @@ const handlePatientInfo = async (parsed, context) => {
 
   if (!hasName || !hasPhone || !hasEmail || !hasAge) {
     const missingItems = [];
-    if (!hasName) missingItems.push("👤 **Your full name**");
-    if (!hasPhone) missingItems.push("📞 **Your 10-digit phone number**");
-    if (!hasEmail) missingItems.push("📧 **Your email address**");
-    if (!hasAge) missingItems.push("🎂 **Your age**");
+    if (!hasName) missingItems.push("👤 Your full name");
+    if (!hasPhone) missingItems.push("📞 Your 10-digit phone number");
+    if (!hasEmail) missingItems.push("📧 Your email address");
+    if (!hasAge) missingItems.push("🎂 Your age");
 
     return {
       message: `I still need:\n\n${missingItems.join(
         "\n"
-      )}\n\n💡 **Quick tip:** You can provide all details like this:\n"John Smith, 9876543210, john@email.com, 30"\n\n⚠️ **All fields are required to proceed with booking.**`,
+      )}\n\n💡 Quick tip: You can provide all details like this:\n"John Smith, 9876543210, john@email.com, 30"\n\n⚠️ All fields are required to proceed with booking.`,
       state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
       conversationContext: context,
     };
@@ -1931,17 +2491,17 @@ const handlePatientInfo = async (parsed, context) => {
 
       if (!hasEmail || !hasAge) {
         const missingItems = [];
-        if (!hasEmail) missingItems.push("📧 **Your email address**");
-        if (!hasAge) missingItems.push("🎂 **Your age**");
+        if (!hasEmail) missingItems.push("📧 Your email address");
+        if (!hasAge) missingItems.push("🎂 Your age");
 
         return {
           message: `I need additional information for the new patient record:\n\n${missingItems.join(
             "\n"
-          )}\n\n💡 **Quick tip:** You can provide all details like this:\n"${
+          )}\n\n💡 Quick tip: You can provide all details like this:\n"${
             context.bookingData.patientName
           }, ${
             context.bookingData.patientPhone
-          }, john@email.com, 30"\n\n📝 **Note:** I found a different patient with this phone number, so I'll create a new record for you.\n\n⚠️ **Email and age are required for new patients.**`,
+          }, john@email.com, 30"\n\n📝 Note: I found a different patient with this phone number, so I'll create a new record for you.\n\n⚠️ Email and age are required for new patients.`,
           state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
           conversationContext: context,
         };
@@ -1962,18 +2522,62 @@ const handlePatientInfo = async (parsed, context) => {
 
     if (!hasEmail || !hasAge) {
       const missingItems = [];
-      if (!hasEmail) missingItems.push("📧 **Your email address**");
-      if (!hasAge) missingItems.push("🎂 **Your age**");
+      if (!hasEmail) missingItems.push("📧 Your email address");
+      if (!hasAge) missingItems.push("🎂 Your age");
 
       return {
         message: `Since you're a new patient, I also need:\n\n${missingItems.join(
           "\n"
-        )}\n\n💡 **Quick tip:** You can provide all details like this:\n"${
+        )}\n\n💡 Quick tip: You can provide all details like this:\n"${
           context.bookingData.patientName
         }, ${
           context.bookingData.patientPhone
-        }, john@email.com, 30"\n\n⚠️ **Email and age are required for new patients.**`,
+        }, john@email.com, 30"\n\n⚠️ Email and age are required for new patients.`,
         state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
+        conversationContext: context,
+      };
+    }
+  }
+
+  // Check if we have doctor selected, if not ask for it
+  const hasDoctor =
+    context.bookingData.doctorId !== undefined ||
+    context.bookingData.doctorName ||
+    context.bookingData.doctorPreference;
+
+  console.log(
+    `👨‍⚕️ Has doctor: ${hasDoctor} (doctorId: "${context.bookingData.doctorId}", doctorName: "${context.bookingData.doctorName}")`
+  );
+
+  if (!hasDoctor) {
+    console.log(`❌ Doctor not selected - redirecting to doctor selection`);
+    context.state = CONVERSATION_STATES.ASKING_DOCTOR;
+
+    // Load available doctors
+    const availableDoctors = await getAvailableDoctors();
+    
+    if (availableDoctors.length === 0) {
+      // No doctors available, skip to appointment type
+      console.log("⚠️ No doctors available, skipping doctor selection");
+    } else {
+      // Show available doctors
+      let doctorMessage = `Great! I have your details:\n👤 ${context.bookingData.patientName}\n📞 ${context.bookingData.patientPhone}\n\n👨‍⚕️ Which doctor would you like to see?\n\n`;
+      
+      availableDoctors.forEach((doctor, index) => {
+        const qualification = doctor.qualification ? ` (${doctor.qualification})` : '';
+        doctorMessage += `• ${doctor.name}${qualification}\n`;
+      });
+      
+      doctorMessage += `• Any Available Doctor\n`;
+      doctorMessage += `\n💡 Tip: Just type the doctor's name or "any"`;
+
+      context.availableDoctors = availableDoctors;
+
+      return {
+        message: doctorMessage,
+        state: CONVERSATION_STATES.ASKING_DOCTOR,
+        availableDoctors: availableDoctors,
+        suggestedActions: [...availableDoctors.map(d => d.name), "Any Available Doctor"],
         conversationContext: context,
       };
     }
@@ -2016,7 +2620,7 @@ const handlePatientInfo = async (parsed, context) => {
         );
         return {
           message:
-            "❌ **Configuration Error**\n\nAppointment types are not configured in the system settings. Please contact the administrator to configure appointment types before booking appointments.",
+            "❌ Configuration Error\n\nAppointment types are not configured in the system settings. Please contact the administrator to configure appointment types before booking appointments.",
           state: CONVERSATION_STATES.GREETING,
           conversationContext: {
             ...context,
@@ -2029,7 +2633,7 @@ const handlePatientInfo = async (parsed, context) => {
       console.error("Error loading appointment types:", error);
       return {
         message:
-          "❌ **System Error**\n\nUnable to load appointment types from database. Please try again or contact support.",
+          "❌ System Error\n\nUnable to load appointment types from database. Please try again or contact support.",
         state: CONVERSATION_STATES.GREETING,
         conversationContext: {
           ...context,
@@ -2039,15 +2643,16 @@ const handlePatientInfo = async (parsed, context) => {
       };
     }
 
+    const doctorDisplay = context.bookingData.doctorName || context.bookingData.doctorPreference || "Any Available Doctor";
     // Show appointment types immediately with the question
-    let typesMessage = `Great! I have your details:\n👤 **${context.bookingData.patientName}**\n📞 **${context.bookingData.patientPhone}**\n\n🏥 **What type of appointment would you like to book?**\n\n`;
+    let typesMessage = `Great! I have your details:\n👤 ${context.bookingData.patientName}\n📞 ${context.bookingData.patientPhone}\n👨‍⚕️ Doctor: ${doctorDisplay}\n\n🏥 What type of appointment would you like to book?\n\n`;
 
     // Show all types as selectable options
     availableTypes.forEach((type, index) => {
-      typesMessage += `• **${type}**\n`;
+      typesMessage += `• ${type}\n`;
     });
 
-    typesMessage += `\n💡 **Tip:** Just type the name (e.g., "consultation") or number (e.g., "1" for first option)`;
+    typesMessage += `\n💡 Tip: Just type the name (e.g., "consultation") or number (e.g., "1" for first option)`;
 
     return {
       message: typesMessage,
@@ -2072,10 +2677,11 @@ const handlePatientInfo = async (parsed, context) => {
     context.bookingData.selectedTime ||
     context.bookingData.time ||
     "Selected time";
+  const doctorDisplay = context.bookingData.doctorName || context.bookingData.doctorPreference || "Any Available Doctor";
 
-  const confirmationMessage = `Perfect! Let me confirm your appointment details:\n\n📅 **Date & Time:** ${appointmentDate} at ${appointmentTime}\n👤 **Patient:** ${
+  const confirmationMessage = `Perfect! Let me confirm your appointment details:\n\n📅 Date & Time: ${appointmentDate} at ${appointmentTime}\n👤 Patient: ${
     context.bookingData.patientName
-  }\n📞 **Phone:** ${context.bookingData.patientPhone}\n🏥 **Type:** ${
+  }\n📞 Phone: ${context.bookingData.patientPhone}\n👨‍⚕️ Doctor: ${doctorDisplay}\n🏥 Type: ${
     context.bookingData.appointmentType
   }\n\n${
     existingPatient
@@ -2102,32 +2708,50 @@ const handleBookingConfirmation = async (parsed, context) => {
   // If confirming, do one final availability check before proceeding
   if (isConfirming && context.bookingData?.selectedSlot) {
     const { date, time } = context.bookingData.selectedSlot;
+    const doctorId = context.bookingData?.doctorId;
+    const doctorName = context.bookingData?.doctorName;
     
-    console.log(`🔒 Final availability check for ${time} on ${date}`);
+    console.log(`🔒 Final availability check for ${time} on ${date} (Doctor: ${doctorName || 'Any'})`);
+    
+    const whereClause = {
+      date: {
+        equals: new Date(date)
+      },
+      time: {
+        equals: time
+      },
+      status: {
+        notIn: ["Cancelled", "Completed"]
+      }
+    };
+    
+    // If specific doctor is selected, check only that doctor's appointments
+    if (doctorId) {
+      whereClause.doctorId = doctorId;
+    }
     
     const existingAppointment = await prisma.appointment.findFirst({
-      where: {
-        date: {
-          equals: new Date(date)
-        },
-        time: {
-          equals: time
-        },
-        status: {
-          notIn: ["Cancelled", "Completed"]
-        }
-      }
+      where: whereClause
     });
 
     if (existingAppointment) {
-      console.log(`❌ Slot was taken during confirmation`);
+      console.log(`❌ Slot was taken during confirmation for ${doctorName || 'this time'}`);
       
-      // Get next available slots
-      const nextSlots = await getAvailableSlots(date);
+      // Get next available slots for this doctor
+      const nextSlots = doctorId 
+        ? await getAvailableSlotsForDoctor(date, null, doctorId)
+        : await getAvailableSlots(date);
+      
+      const message = doctorId
+        ? `I apologize, but someone just booked that time slot with ${doctorName} while we were talking. Here are the next available times:\n\n${
+            nextSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+          }\n\nWould you like any of these times instead?`
+        : `I apologize, but someone just booked that time slot while we were talking. Here are the next available times:\n\n${
+            nextSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
+          }\n\nWould you like any of these times instead?`;
+      
       return {
-        message: `I apologize, but someone just booked that time slot while we were talking. Here are the next available times:\n\n${
-          nextSlots.slice(0, 3).map(slot => `• ${slot.time} on ${slot.displayDate}`).join('\n')
-        }\n\nWould you like any of these times instead?`,
+        message: message,
         conversationContext: {
           ...context,
           state: CONVERSATION_STATES.SHOWING_SLOTS,
@@ -2140,15 +2764,15 @@ const handleBookingConfirmation = async (parsed, context) => {
   console.log(`✅ Is confirming: ${isConfirming}, Is denying: ${isDenying}`);
 
   if (isDenying) {
-    context.state = CONVERSATION_STATES.ASKING_DATE;
+    context.state = CONVERSATION_STATES.ASKING_DOCTOR;
     return {
       message:
-        "No problem! Let's start over. When would you like to schedule your appointment?",
-      state: CONVERSATION_STATES.ASKING_DATE,
-      suggestedActions: ["today", "tomorrow", "next_week"],
+        "No problem! Let's start over. Which doctor would you like to see?",
+      state: CONVERSATION_STATES.ASKING_DOCTOR,
+      suggestedActions: ["Any Available Doctor"],
       conversationContext: {
         ...context,
-        state: CONVERSATION_STATES.ASKING_DATE,
+        state: CONVERSATION_STATES.ASKING_DOCTOR,
         bookingData: {},
       },
     };
@@ -2213,7 +2837,7 @@ const handleBookingConfirmation = async (parsed, context) => {
       ) {
         // Only appointment type is missing - redirect to type selection
         return {
-          message: `❌ **Cannot proceed with booking!**\n\nI need to know what type of appointment this is.\n\n🏥 **What type of appointment would you like?**`,
+          message: `❌ Cannot proceed with booking!\n\nI need to know what type of appointment this is.\n\n🏥 What type of appointment would you like?`,
           state: CONVERSATION_STATES.ASKING_APPOINTMENT_TYPE,
           readyToBook: false,
           conversationContext: {
@@ -2227,11 +2851,11 @@ const handleBookingConfirmation = async (parsed, context) => {
       ) {
         // Patient info is missing - redirect to patient info collection
         return {
-          message: `❌ **Cannot proceed with booking!**\n\nI'm missing critical information:\n\n${missingInfo
+          message: `❌ Cannot proceed with booking!\n\nI'm missing critical information:\n\n${missingInfo
             .map((info) => `• ${info}`)
             .join(
               "\n"
-            )}\n\n🔄 **Let's collect this information properly.**\n\nPlease provide your **full name and phone number** like this:\n"John Smith, 9876543210"`,
+            )}\n\n🔄 Let's collect this information properly.\n\nPlease provide your full name and phone number like this:\n"John Smith, 9876543210"`,
           state: CONVERSATION_STATES.COLLECTING_PATIENT_INFO,
           readyToBook: false,
           conversationContext: {
@@ -2242,11 +2866,11 @@ const handleBookingConfirmation = async (parsed, context) => {
       } else {
         // Other info missing - general error
         return {
-          message: `❌ **Cannot proceed with booking!**\n\nI'm missing critical information:\n\n${missingInfo
+          message: `❌ Cannot proceed with booking!\n\nI'm missing critical information:\n\n${missingInfo
             .map((info) => `• ${info}`)
             .join(
               "\n"
-            )}\n\n🔄 **Let's start over to collect all required information.**`,
+            )}\n\n🔄 Let's start over to collect all required information.`,
           state: CONVERSATION_STATES.GREETING,
           readyToBook: false,
           conversationContext: {
@@ -2298,6 +2922,9 @@ const handleBookingConfirmation = async (parsed, context) => {
 module.exports = {
   processAppointmentChat,
   getAvailableSlots,
+  getAvailableSlotsForDoctor,
+  getAvailableDoctors,
+  getDoctorsAvailableAtSlot,
   findPatient,
   parseUserInput,
   normalizeTimeFormat,

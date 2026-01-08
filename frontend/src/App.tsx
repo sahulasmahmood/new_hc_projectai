@@ -25,6 +25,7 @@ import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/layout/AppLayout";
+import Landing from "./pages/Landing";
 
 function App() {
   const queryClient = new QueryClient();
@@ -36,10 +37,10 @@ function App() {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
-            <Route path="/" element={<AppLayout />}>
+            <Route element={<AppLayout />}>
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="symptoms" element={<Symptoms />} />
               <Route path="patients" element={<Patients />} />

@@ -68,7 +68,7 @@ const AIAppointmentBot = ({
       id: "1",
       type: "ai",
       content:
-        "Hello! I'm your AI appointment assistant. 👋\n\nI can help you:\n📅 **Book new appointments**\n🔄 **Reschedule existing appointments**\n❌ **Cancel appointments**\n📋 **Check available slots**\n\nWhat would you like to do today?",
+        "Hello! I'm your AI appointment assistant. 👋\n\nI can help you:\n📅 Book new appointments\n🔄 Reschedule existing appointments\n❌ Cancel appointments\n📋 Check available slots\n\nWhat would you like to do today?",
       timestamp: new Date().toISOString(),
       state: "greeting",
     },
@@ -261,23 +261,23 @@ const AIAppointmentBot = ({
           isMinimized ? "w-80 h-16" : "w-[420px] h-[700px]"
         } shadow-xl border-2 border-medical-200`}
       >
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-medical-600">
-              <Bot className="h-5 w-5" />
-              {isMinimized
-                ? "AI Appointment Assistant"
-                : "AI Appointment Assistant"}
+        <CardHeader className={`${isMinimized ? "p-3 py-2 flex items-center justify-center" : "pb-2"}`}>
+          <div className="flex items-center justify-between w-full">
+            <CardTitle className={`flex items-center gap-2 text-medical-600 ${isMinimized ? "text-sm font-semibold" : ""}`}>
+              <Bot className={isMinimized ? "h-4 w-4" : "h-5 w-5"} />
+              <span className={`${isMinimized ? "whitespace-nowrap truncate max-w-[180px]" : ""}`}>
+                {isMinimized ? "AI Assistant" : "AI Appointment Assistant"}
+              </span>
             </CardTitle>
-            <div className="flex gap-1">
+            <div className={`flex items-center gap-1 ${isMinimized ? "ml-auto" : ""}`}>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={onMinimize}
-                className="h-6 w-6 p-0"
+                className={`${isMinimized ? "h-8 w-8" : "h-6 w-6"} p-0`}
               >
                 {isMinimized ? (
-                  <Maximize2 className="h-3 w-3" />
+                  <Maximize2 className="h-4 w-4" />
                 ) : (
                   <Minimize2 className="h-3 w-3" />
                 )}
@@ -286,9 +286,9 @@ const AIAppointmentBot = ({
                 size="sm"
                 variant="ghost"
                 onClick={onClose}
-                className="h-6 w-6 p-0"
+                className={`${isMinimized ? "h-8 w-8" : "h-6 w-6"} p-0 text-gray-400 hover:text-gray-600`}
               >
-                <X className="h-3 w-3" />
+                <X className={isMinimized ? "h-4 w-4" : "h-3 w-3"} />
               </Button>
             </div>
           </div>
